@@ -7,9 +7,39 @@ require "secrets"
 -- Helper functions
 
 function BindAppShortcut(keyStroke, appName)
+    local shouldSendToCitrix = false
+    local citrixApp = nil
+
     hs.hotkey.bind({"ctrl", "cmd"}, keyStroke, function()
+        local frontmostApp = hs.application.frontmostApplication()
+        if frontmostApp and frontmostApp:name() == "Citrix Viewer" then
+            shouldSendToCitrix = true
+            citrixApp = frontmostApp
+            return
+        end
+
         hs.application.launchOrFocus(appName)
         hs.alert.show(appName, 0.5)
+    end, function()
+        if not shouldSendToCitrix then
+            return
+        end
+
+        shouldSendToCitrix = false
+        local targetApp = citrixApp
+        citrixApp = nil
+
+        local mods = {"ctrl", "alt", "cmd"}
+        local keyDownEvent = hs.eventtap.event.newKeyEvent(mods, keyStroke, true)
+        local keyUpEvent = hs.eventtap.event.newKeyEvent(mods, keyStroke, false)
+
+        if targetApp then
+            keyDownEvent:post(targetApp)
+            keyUpEvent:post(targetApp)
+        else
+            keyDownEvent:post()
+            keyUpEvent:post()
+        end
     end)
 end
 
@@ -61,7 +91,7 @@ end
 
 -- App shortcuts: Ctrl-Alt
 
-BindAppShortcut("c", "Claude")
+BindAppShortcut("c", "ChatGPT")
 BindAppShortcut("e", "Telegram")
 BindAppShortcut("f", "Finder")
 BindAppShortcut("g", "Google Chrome")
@@ -83,7 +113,7 @@ BindAppShortcut("z", "Zoom")
 
 -- App shortcuts: Ctrl-Option
 
-BindAltShortcut("c", "ChatGPT")
+BindAltShortcut("c", "Claude")
 BindAltShortcut("o", "Microsoft Outlook")
 BindAltShortcut("s", "Simulator")
 
