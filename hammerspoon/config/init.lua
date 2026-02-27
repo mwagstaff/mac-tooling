@@ -55,40 +55,48 @@ function SendCtrlRightCmdRightOptionKeyToApp(keyCode, targetApp)
     end)
 end
 
-function BindAppShortcut(keyStroke, appName)
-    local shouldSendToCitrix = false
-    local citrixApp = nil
+function SendCtrlCmdKeyToApp(keyCode, targetApp)
+    local cmdKeyCode = hs.keycodes.map["cmd"]
+    local optionKeyCode = hs.keycodes.map["alt"]
+    local ctrlKeyCode = hs.keycodes.map["ctrl"]
+    if cmdKeyCode == nil or ctrlKeyCode == nil or keyCode == nil then
+        return
+    end
 
+    local function postKey(code, isDown)
+        local event = hs.eventtap.event.newKeyEvent(code, isDown)
+        if targetApp then
+            event:post(targetApp)
+        else
+            event:post()
+        end
+    end
+
+    postKey(ctrlKeyCode, true)
+    postKey(optionKeyCode, true)
+    postKey(cmdKeyCode, true)
+
+    hs.timer.doAfter(0.1, function()
+        postKey(keyCode, true)
+
+        hs.timer.doAfter(0.05, function()
+            postKey(keyCode, false)
+            postKey(ctrlKeyCode, false)
+            postKey(optionKeyCode, false)
+            postKey(cmdKeyCode, false)
+        end)
+    end)
+end
+
+function BindAppShortcut(keyStroke, appName)
     hs.hotkey.bind({"ctrl", "cmd"}, keyStroke, function()
-        local frontmostApp = hs.application.frontmostApplication()
-        if frontmostApp and frontmostApp:name() == "Citrix Viewer" then
-            shouldSendToCitrix = true
-            citrixApp = frontmostApp
+        local isCitrixFrontmost = IsCitrixFrontmost()
+        if isCitrixFrontmost then
             return
         end
 
         hs.application.launchOrFocus(appName)
         hs.alert.show(appName, 0.5)
-    end, function()
-        if not shouldSendToCitrix then
-            return
-        end
-
-        shouldSendToCitrix = false
-        local targetApp = citrixApp
-        citrixApp = nil
-
-        local mods = {"ctrl", "alt", "cmd"}
-        local keyDownEvent = hs.eventtap.event.newKeyEvent(mods, keyStroke, true)
-        local keyUpEvent = hs.eventtap.event.newKeyEvent(mods, keyStroke, false)
-
-        if targetApp then
-            keyDownEvent:post(targetApp)
-            keyUpEvent:post(targetApp)
-        else
-            keyDownEvent:post()
-            keyUpEvent:post()
-        end
     end)
 end
 
@@ -129,6 +137,28 @@ local citrixCtrlAltRemapTap = hs.eventtap.new({hs.eventtap.event.types.keyDown},
     return true
 end)
 citrixCtrlAltRemapTap:start()
+
+-- When Citrix is frontmost, remap ctrl+cmd+<character> to ctrl+cmd+<character> (delayed send).
+local citrixCtrlCmdRemapTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(event)
+    local isCitrixFrontmost, frontmostApp = IsCitrixFrontmost()
+    if not isCitrixFrontmost then
+        return false
+    end
+
+    local flags = event:getFlags()
+    if not flags:containExactly({"ctrl", "cmd"}) then
+        return false
+    end
+
+    local keyCode = event:getKeyCode()
+    if not IsCharacterKeyCode(keyCode) then
+        return false
+    end
+
+    SendCtrlCmdKeyToApp(keyCode, frontmostApp)
+    return true
+end)
+citrixCtrlCmdRemapTap:start()
 
 function BindCommandShortcut(keyStroke, command)
     hs.hotkey.bind({"ctrl", "cmd"}, keyStroke, function()
