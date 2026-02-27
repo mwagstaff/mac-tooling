@@ -6,6 +6,55 @@ require "secrets"
 
 -- Helper functions
 
+function IsCitrixFrontmost()
+    local frontmostApp = hs.application.frontmostApplication()
+    if frontmostApp and frontmostApp:name() == "Citrix Viewer" then
+        return true, frontmostApp
+    end
+    return false, nil
+end
+
+function IsCharacterKeyCode(keyCode)
+    local keyName = hs.keycodes.map[keyCode]
+    if type(keyName) ~= "string" then
+        return false
+    end
+    return keyName:len() == 1 or keyName == "space"
+end
+
+function SendCtrlRightCmdRightOptionKeyToApp(keyCode, targetApp)
+    local rightCmdKeyCode = hs.keycodes.map["rightcmd"]
+    local rightOptionKeyCode = hs.keycodes.map["rightalt"]
+    local ctrlKeyCode = hs.keycodes.map["ctrl"]
+    if rightCmdKeyCode == nil or rightOptionKeyCode == nil or ctrlKeyCode == nil or keyCode == nil then
+        return
+    end
+
+    local function postKey(code, isDown)
+        local event = hs.eventtap.event.newKeyEvent(code, isDown)
+        if targetApp then
+            event:post(targetApp)
+        else
+            event:post()
+        end
+    end
+
+    postKey(ctrlKeyCode, true)
+    postKey(rightCmdKeyCode, true)
+    postKey(rightOptionKeyCode, true)
+
+    hs.timer.doAfter(0.1, function()
+        postKey(keyCode, true)
+
+        hs.timer.doAfter(0.05, function()
+            postKey(keyCode, false)
+            postKey(ctrlKeyCode, false)
+            postKey(rightOptionKeyCode, false)
+            postKey(rightCmdKeyCode, false)
+        end)
+    end)
+end
+
 function BindAppShortcut(keyStroke, appName)
     local shouldSendToCitrix = false
     local citrixApp = nil
@@ -45,10 +94,41 @@ end
 
 function BindAltShortcut(keyStroke, appName)
     hs.hotkey.bind({"ctrl", "option"}, keyStroke, function()
+        local isCitrixFrontmost, frontmostApp = IsCitrixFrontmost()
+        if isCitrixFrontmost then
+            local keyCode = hs.keycodes.map[keyStroke]
+            if keyCode ~= nil then
+                SendCtrlRightCmdRightOptionKeyToApp(keyCode, frontmostApp)
+            end
+            return
+        end
+
         hs.application.launchOrFocus(appName)
         hs.alert.show(appName, 0.5)
     end)
 end
+
+-- When Citrix is frontmost, remap ctrl+option+<character> to ctrl+rightcmd+rightoption+<character>.
+local citrixCtrlAltRemapTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(event)
+    local isCitrixFrontmost, frontmostApp = IsCitrixFrontmost()
+    if not isCitrixFrontmost then
+        return false
+    end
+
+    local flags = event:getFlags()
+    if not flags:containExactly({"ctrl", "alt"}) then
+        return false
+    end
+
+    local keyCode = event:getKeyCode()
+    if not IsCharacterKeyCode(keyCode) then
+        return false
+    end
+
+    SendCtrlRightCmdRightOptionKeyToApp(keyCode, frontmostApp)
+    return true
+end)
+citrixCtrlAltRemapTap:start()
 
 function BindCommandShortcut(keyStroke, command)
     hs.hotkey.bind({"ctrl", "cmd"}, keyStroke, function()
