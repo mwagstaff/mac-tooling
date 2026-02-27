@@ -90,8 +90,12 @@ end
 
 function BindAppShortcut(keyStroke, appName)
     hs.hotkey.bind({"ctrl", "cmd"}, keyStroke, function()
-        local isCitrixFrontmost = IsCitrixFrontmost()
+        local isCitrixFrontmost, frontmostApp = IsCitrixFrontmost()
         if isCitrixFrontmost then
+            local keyCode = hs.keycodes.map[keyStroke]
+            if keyCode ~= nil then
+                SendCtrlCmdKeyToApp(keyCode, frontmostApp)
+            end
             return
         end
 
