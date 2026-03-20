@@ -326,7 +326,7 @@ hs.hotkey.bind({"cmd", "ctrl"}, "/", function()
     end)
 end)
 
--- Turn bluetooth off and on again, with a 5 second delay in between
+-- Turn bluetooth off and on again, with a short delay in between
 -- Note: Requires blueutil to be installed via homebrew, i.e. `brew install blueutil`
 hs.hotkey.bind({"cmd", "ctrl"}, "'", function()
     hs.alert.show("Turning bluetooth off...", 0.5)
