@@ -37,6 +37,27 @@ if ! command -v rsync >/dev/null 2>&1; then
   exit 1
 fi
 
+build_rsync_args() {
+  local source_path="$1"
+  local -a rsync_args
+  local special_found="false"
+
+  rsync_args=(-rltp)
+
+  if [[ -d "$source_path" ]]; then
+    while IFS= read -r -d '' special_path; do
+      special_found="true"
+      rsync_args+=(--exclude "${special_path#$source_path/}")
+    done < <(find "$source_path" \( -type s -o -type b -o -type c -o -type p \) -print0 2>/dev/null)
+  fi
+
+  if [[ "$special_found" == "true" ]]; then
+    echo "[NOTE] Skipping special files under $source_path (for example agent sockets)." >&2
+  fi
+
+  printf '%s\0' "${rsync_args[@]}"
+}
+
 backup_root="${1:-$DEFAULT_BACKUP_ROOT}"
 
 if [[ ! -d "$DEFAULT_ICLOUD_ROOT" ]]; then
@@ -59,10 +80,15 @@ copy_item() {
   fi
 
   echo "[BACKUP] $source_path -> $backup_dir/$target_name"
+  local -a rsync_args
+  while IFS= read -r -d '' arg; do
+    rsync_args+=("$arg")
+  done < <(build_rsync_args "$source_path")
+
   if [[ -d "$source_path" ]]; then
-    rsync -a "$source_path/" "$backup_dir/$target_name/"
+    rsync "${rsync_args[@]}" "$source_path/" "$backup_dir/$target_name/"
   else
-    rsync -a "$source_path" "$backup_dir/$target_name"
+    rsync "${rsync_args[@]}" "$source_path" "$backup_dir/$target_name"
   fi
 }
 

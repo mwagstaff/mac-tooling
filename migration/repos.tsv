@@ -1,0 +1,8 @@
+# Clone URL<TAB>Destination path
+# Verified from local remotes:
+git@github.com:mwagstaff/mac-tooling.git	~/dev/mac-tooling
+git@github.com:mwagstaff/healthcheck.git	~/dev/healthcheck
+git@github.com:mwagstaff/my-boris-bikes.git	~/dev/my-boris-bikes
+git@github.com:mwagstaff/server-tooling.git	~/dev/server-tooling
+git@github.com:mwagstaff/top-scores.git	~/dev/top-scores
+git@github.com:mwagstaff/train-track-uk.git	~/dev/train-track-uk

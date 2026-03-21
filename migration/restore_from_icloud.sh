@@ -56,6 +56,27 @@ if ! command -v rsync >/dev/null 2>&1; then
   exit 1
 fi
 
+build_rsync_args() {
+  local source_path="$1"
+  local -a rsync_args
+  local special_found="false"
+
+  rsync_args=(-rltp)
+
+  if [[ -d "$source_path" ]]; then
+    while IFS= read -r -d '' special_path; do
+      special_found="true"
+      rsync_args+=(--exclude "${special_path#$source_path/}")
+    done < <(find "$source_path" \( -type s -o -type b -o -type c -o -type p \) -print0 2>/dev/null)
+  fi
+
+  if [[ "$special_found" == "true" ]]; then
+    echo "[NOTE] Skipping special files in backup under $source_path." >&2
+  fi
+
+  printf '%s\0' "${rsync_args[@]}"
+}
+
 backup_dir="${1%/}"
 
 if [[ ! -d "$backup_dir" ]]; then
@@ -85,10 +106,15 @@ restore_item() {
   fi
 
   echo "[RESTORE] $source_path -> $destination_path"
+  local -a rsync_args
+  while IFS= read -r -d '' arg; do
+    rsync_args+=("$arg")
+  done < <(build_rsync_args "$source_path")
+
   if [[ -d "$source_path" ]]; then
-    rsync -a "$source_path/" "$destination_path/"
+    rsync "${rsync_args[@]}" "$source_path/" "$destination_path/"
   else
-    rsync -a "$source_path" "$destination_path"
+    rsync "${rsync_args[@]}" "$source_path" "$destination_path"
   fi
 }
 
