@@ -228,7 +228,7 @@ BindAppShortcut("u", "Cursor")
 BindAppShortcut("v", "Visual Studio Code")
 BindAppShortcut("w", "WhatsApp")
 BindAppShortcut("x", "Xcode")
-BindAppShortcut("z", "Zoom")
+BindAppShortcut("z", "zoom.us")
 
 -- App shortcuts: Ctrl-Option
 
