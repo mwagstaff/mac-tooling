@@ -2,7 +2,12 @@
 
 -- Requires
 
+-- secrets.lua not included in version control, and should contain the following:
+-- LoginUrl = "WORK_LOGIN_URL"
+-- PasswordPrefix = "PASSWORD_PREFIX"
+-- PasswordSuffix = "PASSWORD_SUFFIX"
 require "secrets"
+
 
 -- Helper functions
 
