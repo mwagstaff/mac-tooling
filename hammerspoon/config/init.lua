@@ -210,14 +210,14 @@ end
 
 -- App shortcuts: Ctrl-Alt
 
-BindAppShortcut("c", "ChatGPT")
+BindAppShortcut("c", "Claude")
 BindAppShortcut("e", "Telegram")
 BindAppShortcut("f", "Finder")
 BindAppShortcut("g", "Google Chrome")
 BindAppShortcut("y", "Quickgif")
 BindAppShortcut("h", "Photos")
 BindAppShortcut("i", "iTerm")
-BindAppShortcut("m", "iPhone Mirroring")
+BindAppShortcut("m", "MongoDB Compass")
 BindAppShortcut("n", "Notes")
 BindAppShortcut("o", "Codex")
 BindAppShortcut("p", "Preview")
@@ -232,8 +232,7 @@ BindAppShortcut("z", "zoom.us")
 
 -- App shortcuts: Ctrl-Option
 
-BindAltShortcut("c", "Claude")
-BindAltShortcut("o", "Microsoft Outlook")
+BindAltShortcut("c", "ChatGPT")
 BindAltShortcut("s", "Simulator")
 
 -- Command shortcuts
