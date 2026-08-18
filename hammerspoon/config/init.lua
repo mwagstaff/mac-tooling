@@ -169,13 +169,6 @@ local citrixCtrlCmdRemapTap = hs.eventtap.new({hs.eventtap.event.types.keyDown},
 end)
 citrixCtrlCmdRemapTap:start()
 
-function BindCommandShortcut(keyStroke, command)
-    hs.hotkey.bind({"ctrl", "cmd"}, keyStroke, function()
-        os.execute(command)
-        hs.alert.show(command, 0.5)
-    end)
-end
-
 function BindPasswordShortcut(passwordIndex)
     print("Binding password shortcut for: "..passwordIndex)
     hs.hotkey.bind({"ctrl", "cmd"}, passwordIndex, function()
@@ -211,11 +204,12 @@ end
 -- App shortcuts: Ctrl-Alt
 
 BindAppShortcut("c", "Claude")
+BindAppShortcut("d", "Discord")
 BindAppShortcut("e", "Telegram")
 BindAppShortcut("f", "Finder")
 BindAppShortcut("g", "Google Chrome")
 BindAppShortcut("y", "Quickgif")
-BindAppShortcut("h", "Photos")
+BindAppShortcut("h", "HTTPie")
 BindAppShortcut("i", "iTerm")
 BindAppShortcut("m", "MongoDB Compass")
 BindAppShortcut("n", "Notes")
@@ -232,12 +226,9 @@ BindAppShortcut("z", "zoom.us")
 
 -- App shortcuts: Ctrl-Option
 
-BindAltShortcut("c", "ChatGPT")
+BindAltShortcut("c", "ChatGPT Classic")
+BindAltShortcut("g", "Gmail")
 BindAltShortcut("s", "Simulator")
-
--- Command shortcuts
-
-BindCommandShortcut("d", "open ~/Downloads")
 
 -- Other hotkeys
 
@@ -349,4 +340,176 @@ end)
 -- Bind cmd + alt + l to lock the screen
 hs.hotkey.bind({"alt", "cmd"}, "l", function()
     hs.caffeinate.lockScreen()
+end)
+
+
+
+-- 03:40 Claude
+
+local timer = require("hs.timer")
+local application = require("hs.application")
+local eventtap = require("hs.eventtap")
+
+local function continueClaude()
+    local app = application.find("Claude")
+
+    if app then
+        app:activate()
+
+        -- Give macOS a moment to switch focus
+        timer.doAfter(0.5, function()
+            eventtap.keyStrokes("Continue")
+            eventtap.keyStroke({}, "return")
+        end)
+    else
+        hs.alert.show("Claude not running")
+    end
+end
+
+-- Check once per minute
+timer.doEvery(60, function()
+    local now = os.date("*t")
+
+    if now.hour == 3 and now.min == 40 then
+        continueClaude()
+    end
+end)
+
+
+-- Ctrl + Option + Cmd + S
+-- Take screenshot of the connected iPhone in Xcode,
+-- return to previous app,
+-- then copy the resulting PNG image to the clipboard.
+
+local screenshotDir = os.getenv("HOME") .. "/Desktop"
+
+local screenshotWatcher = nil
+local screenshotStartedAt = nil
+local screenshotCopied = false
+
+local function copyScreenshotToClipboard(path)
+    -- Give Xcode a tiny moment to finish writing the PNG.
+    hs.timer.doAfter(0.15, function()
+
+        local image = hs.image.imageFromPath(path)
+
+        if not image then
+            print("Could not load screenshot:", path)
+            return
+        end
+
+        local success = hs.pasteboard.writeObjects(image)
+
+        if success then
+            screenshotCopied = true
+            hs.alert.show("📋 Screenshot copied", 0.6)
+            print("Screenshot copied to clipboard:", path)
+        else
+            hs.alert.show("❌ Clipboard copy failed", 1)
+            print("Failed to copy screenshot:", path)
+        end
+    end)
+end
+
+
+local function startScreenshotWatcher()
+    screenshotStartedAt = hs.timer.secondsSinceEpoch()
+    screenshotCopied = false
+
+    -- Stop any previous watcher.
+    if screenshotWatcher then
+        screenshotWatcher:stop()
+        screenshotWatcher = nil
+    end
+
+    screenshotWatcher = hs.pathwatcher.new(
+        screenshotDir,
+        function(paths)
+
+            if screenshotCopied then
+                return
+            end
+
+            for _, path in ipairs(paths) do
+
+                -- Only consider PNG files.
+                if path:lower():match("%.png$") then
+
+                    local attrs = hs.fs.attributes(path)
+
+                    if attrs then
+                        local modified = attrs.modification or 0
+
+                        -- Only accept a file created/modified after
+                        -- we initiated this screenshot.
+                        if modified >= screenshotStartedAt - 1 then
+
+                            copyScreenshotToClipboard(path)
+
+                            -- We only want one screenshot.
+                            if screenshotWatcher then
+                                screenshotWatcher:stop()
+                                screenshotWatcher = nil
+                            end
+
+                            return
+                        end
+                    end
+                end
+            end
+        end
+    )
+
+    screenshotWatcher:start()
+
+    -- Safety timeout: don't leave the watcher running forever.
+    hs.timer.doAfter(10, function()
+        if screenshotWatcher then
+            screenshotWatcher:stop()
+            screenshotWatcher = nil
+        end
+    end)
+end
+
+
+hs.hotkey.bind({"ctrl", "alt", "cmd"}, "s", function()
+
+    local previousApp = hs.application.frontmostApplication()
+    local xcode = hs.application.get("Xcode")
+
+    if not xcode then
+        hs.alert.show("❌ Xcode not running")
+        return
+    end
+
+    -- Start watching BEFORE asking Xcode to create the screenshot.
+    startScreenshotWatcher()
+
+    xcode:activate()
+
+    hs.timer.doAfter(0.2, function()
+
+        local success = xcode:selectMenuItem(
+            "^Take Screenshot of .+$",
+            true
+        )
+
+        if not success then
+            hs.alert.show("❌ Screenshot command not found", 1)
+
+            if screenshotWatcher then
+                screenshotWatcher:stop()
+                screenshotWatcher = nil
+            end
+        end
+
+        -- Return to whatever you were doing.
+        hs.timer.doAfter(0.15, function()
+            if previousApp and previousApp:isRunning() then
+                previousApp:activate()
+            end
+        end)
+
+    end)
+
 end)

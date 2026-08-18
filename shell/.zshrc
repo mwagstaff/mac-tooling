@@ -20,6 +20,7 @@ alias reload="exec zsh"
 alias todo="grep -rIi todo . --exclude-dir={node_modules,.git,dist,cypress,.vscode,ios}"
 alias mongo="ssh -L 27017:localhost:27017 sky"
 alias clean-worktrees='git -C /Users/mwagstaff/dev/kidventures worktree list --porcelain | grep "worktree .*/.claude/worktrees" | awk "{print \$2}" | xargs -I{} git -C /Users/mwagstaff/dev/kidventures worktree remove --force {} 2>/dev/null; find /Users/mwagstaff/dev/kidventures/.claude/worktrees -mindepth 1 -maxdepth 1 -type d | xargs rm -rf'
+alias gs="git status"
 
 # Bitwarden
 BW_ENV_FOLDER_NAME="${BW_ENV_FOLDER_NAME:-Local environment variables}"
@@ -33,6 +34,9 @@ git config --global user.email "mike.wagstaff@gmail.com"
 
 # Created by `pipx` on 2024-05-06 18:12:03
 export PATH="$PATH:/Users/${USER}/.local/bin"
+
+# Add Homebrew to PATH
+export PATH="/opt/homebrew/bin:$PATH"
 
 # Claude Code cleanup function - removes worktrees and branches created by Claude Code
 function cleanup() {
@@ -354,6 +358,20 @@ bw-reload() {
 
 bw_load_env_vars
 
+hr() {
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  export OPENAI_BASE_URL=http://127.0.0.1:8787/v1
+  headroom proxy --port 8787
+}
+
+# Git push function that adds all changes, commits with a message, and pushes to the remote repository
+# Example usage: gp "Your commit message"
+function gp() {
+  git add .
+  git commit -m "$1"
+  git push
+}
+
 # Initialize Oh My Posh if not running in Apple Terminal (which doesn't support it well)
 if [ "$TERM_PROGRAM" != "Apple_Terminal" ]; then
   eval "$(oh-my-posh init zsh)"
@@ -362,3 +380,70 @@ fi
 eval "$(zoxide init zsh)"
 
 alias j="z"
+export PATH="$(npm bin -g):$PATH"
+export PATH="$(npm bin -g):$PATH"
+
+
+# Display command start and end times, and duration for commands that take longer than 5 seconds
+
+autoload -Uz add-zsh-hook
+
+__cmd_start_epoch=0
+__cmd_start_time=""
+__cmd_interrupted=0
+__cmd_threshold=5
+
+__preexec() {
+    __cmd_start_epoch=$EPOCHSECONDS
+    __cmd_start_time=$(date '+%H:%M:%S')
+    __cmd_interrupted=0
+
+    printf "\n▶ Started at %s\n\n" "$__cmd_start_time"
+}
+
+__precmd() {
+    local exit_code=$?
+
+    [[ $__cmd_start_epoch -eq 0 ]] && return
+
+    local end_time elapsed status
+
+    end_time=$(date '+%H:%M:%S')
+    elapsed=$((EPOCHSECONDS - __cmd_start_epoch))
+
+    # Reset state before possibly returning
+    local start_time="$__cmd_start_time"
+    local interrupted="$__cmd_interrupted"
+
+    __cmd_start_epoch=0
+    __cmd_start_time=""
+    __cmd_interrupted=0
+
+    (( elapsed < __cmd_threshold )) && return
+
+    if [[ $interrupted -eq 1 || $exit_code -eq 130 ]]; then
+        status="Interrupted"
+    elif [[ $exit_code -eq 0 ]]; then
+        status="Completed"
+    else
+        status="Failed, exit $exit_code"
+    fi
+
+    printf "\n✓ %s — started %s, finished %s, took %ss\n\n" \
+        "$status" "$start_time" "$end_time" "$elapsed"
+}
+
+TRAPINT() {
+    if [[ $__cmd_start_epoch -ne 0 ]]; then
+        __cmd_interrupted=1
+    fi
+
+    return 130
+}
+
+add-zsh-hook preexec __preexec
+add-zsh-hook precmd __precmd
+
+# Fix option key word navigation, e.g. option + left/right arrow to move by word
+bindkey $'\e[1;3D' backward-word
+bindkey $'\e[1;3C' forward-word
