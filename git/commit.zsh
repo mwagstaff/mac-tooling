@@ -412,18 +412,34 @@ save_worker_result() {
 
 process_repository() {
   local repo=$1 result_file=$2 branch head_before tree_before commit_oid
+  local repo_label status_output commit_output_file commit_line
   local commit_subject commit_body commit_message message_source message_error
   integer repo_committed=0 repo_pushed=0 repo_skipped=0 repo_failed=0
 
-  print
-  print -- "==> ${repo#$root/}"
+  repo_label=${repo#$root/}
 
   if ! cd "$repo"; then
+    print -- "==> $repo_label"
     print -u2 "    Could not enter repository"
     (( repo_failed++ ))
     save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
     return
   fi
+
+  if ! status_output=$(git status --porcelain=v1); then
+    print -- "==> $repo_label"
+    print -u2 "    Could not read working-tree status"
+    (( repo_failed++ ))
+    save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
+    return
+  fi
+
+  if [[ -z $status_output ]] && ! operation_in_progress; then
+    save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
+    return
+  fi
+
+  print -- "==> $repo_label"
 
   if operation_in_progress; then
     print -u2 "    Skipped: a merge, rebase, cherry-pick, or revert is in progress"
@@ -442,12 +458,6 @@ process_repository() {
   if [[ -z $branch ]]; then
     print -u2 "    Skipped: HEAD is detached"
     (( repo_skipped++ ))
-    save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
-    return
-  fi
-
-  if [[ -z $(git status --porcelain=v1) ]]; then
-    print "    Working tree is clean"
     save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
     return
   fi
@@ -507,9 +517,17 @@ process_repository() {
   fi
   [[ -n $message_error ]] && print "    Codex unavailable: $message_error"
   print "    Committing: $commit_subject [$message_source]"
-  if print -r -- "$commit_message" | git commit -F -; then
+  commit_output_file="$result_file.commit-output"
+  if print -r -- "$commit_message" | git commit -F - > "$commit_output_file" 2>&1; then
     (( repo_committed++ ))
+    while IFS= read -r commit_line || [[ -n $commit_line ]]; do
+      if [[ $commit_line == \[*\]\ * && ${commit_line#*] } == "$commit_subject" ]]; then
+        continue
+      fi
+      print -r -- "$commit_line"
+    done < "$commit_output_file"
   else
+    [[ -s $commit_output_file ]] && cat "$commit_output_file"
     print -u2 "    Commit failed"
     (( repo_failed++ ))
     save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
@@ -552,7 +570,11 @@ flush_batch() {
   for (( batch_index = 1; batch_index <= ${#batch_outputs}; batch_index++ )); do
     output_file=${batch_outputs[$batch_index]}
     result_file=${batch_results[$batch_index]}
-    [[ -s $output_file ]] && cat "$output_file"
+    if [[ -s $output_file ]]; then
+      (( displayed_repositories > 0 )) && print
+      cat "$output_file"
+      (( displayed_repositories++ ))
+    fi
     if [[ -s $result_file ]]; then
       read -r repo_committed repo_pushed repo_skipped repo_failed < "$result_file"
       (( committed += repo_committed ))
@@ -572,7 +594,7 @@ if ! $dry_run; then
   check_codex_available || true
 fi
 
-integer committed=0 pushed=0 skipped=0 failed=0 repository_index=0
+integer committed=0 pushed=0 skipped=0 failed=0 repository_index=0 displayed_repositories=0
 typeset -a batch_pids batch_outputs batch_results
 
 for repo in $repositories; do
@@ -588,12 +610,14 @@ done
 (( ${#batch_pids} > 0 )) && flush_batch
 
 print
+result_icon=✅
+(( failed > 0 )) && result_icon=❌
 if $dry_run; then
-  print "Dry run complete: ${#repositories} repositories found, $skipped skipped, $failed failed."
+  print "$result_icon Dry run complete: ${#repositories} repositories found, $skipped skipped, $failed failed."
 elif $test_messages; then
-  print "Message test complete: ${#repositories} repositories found, $skipped skipped, $failed failed."
+  print "$result_icon Message test complete: ${#repositories} repositories found, $skipped skipped, $failed failed."
 else
-  print "Complete: $committed committed, $pushed pushed, $skipped skipped, $failed failed."
+  print "$result_icon Complete: $committed committed, $pushed pushed, $skipped skipped, $failed failed."
 fi
 
 (( failed == 0 ))
