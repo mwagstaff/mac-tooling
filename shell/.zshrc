@@ -20,8 +20,8 @@ alias reload="exec zsh"
 alias todo="grep -rIi todo . --exclude-dir={node_modules,.git,dist,cypress,.vscode,ios}"
 alias mongo="ssh -L 27017:localhost:27017 sky"
 alias clean-worktrees='git -C /Users/mwagstaff/dev/kidventures worktree list --porcelain | grep "worktree .*/.claude/worktrees" | awk "{print \$2}" | xargs -I{} git -C /Users/mwagstaff/dev/kidventures worktree remove --force {} 2>/dev/null; find /Users/mwagstaff/dev/kidventures/.claude/worktrees -mindepth 1 -maxdepth 1 -type d | xargs rm -rf'
-alias gs="git status"
 alias gc="~/dev/server-tooling/git/commit.zsh"
+alias gs="~/dev/server-tooling/git/status.zsh"
 
 # Bitwarden
 BW_ENV_FOLDER_NAME="${BW_ENV_FOLDER_NAME:-Local environment variables}"
@@ -448,3 +448,5 @@ add-zsh-hook precmd __precmd
 # Fix option key word navigation, e.g. option + left/right arrow to move by word
 bindkey $'\e[1;3D' backward-word
 bindkey $'\e[1;3C' forward-word
+
+source "$HOME/.config/zsh/dev-git-prompt/dev-git-prompt.zsh"
