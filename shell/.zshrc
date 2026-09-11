@@ -20,8 +20,8 @@ alias reload="exec zsh"
 alias todo="grep -rIi todo . --exclude-dir={node_modules,.git,dist,cypress,.vscode,ios}"
 alias mongo="ssh -L 27017:localhost:27017 sky"
 alias clean-worktrees='git -C /Users/mwagstaff/dev/kidventures worktree list --porcelain | grep "worktree .*/.claude/worktrees" | awk "{print \$2}" | xargs -I{} git -C /Users/mwagstaff/dev/kidventures worktree remove --force {} 2>/dev/null; find /Users/mwagstaff/dev/kidventures/.claude/worktrees -mindepth 1 -maxdepth 1 -type d | xargs rm -rf'
-alias gc="~/dev/server-tooling/git/commit.zsh"
-alias gs="~/dev/server-tooling/git/status.zsh"
+alias gc="~/dev/mac-tooling/git/commit.zsh"
+alias gs="~/dev/mac-tooling/git/status.zsh"
 
 # Bitwarden
 BW_ENV_FOLDER_NAME="${BW_ENV_FOLDER_NAME:-Local environment variables}"
