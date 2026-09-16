@@ -342,6 +342,20 @@ hs.hotkey.bind({"alt", "cmd"}, "l", function()
     hs.caffeinate.lockScreen()
 end)
 
+-- Bind ctrl + alt + d to toggle screen brightness to 20%, restoring the
+-- previous brightness when pressed again.
+local savedBrightness = nil
+
+hs.hotkey.bind({"ctrl", "cmd"}, "`", function()
+    if savedBrightness == nil then
+        savedBrightness = hs.brightness.get()
+        hs.brightness.set(5)
+    else
+        hs.brightness.set(savedBrightness)
+        savedBrightness = nil
+    end
+end)
+
 
 
 -- 03:40 Claude
