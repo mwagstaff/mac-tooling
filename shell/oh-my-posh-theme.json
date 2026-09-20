@@ -89,21 +89,6 @@
           "background": "p:yellow",
           "type": "root",
           "style": "powerline"
-        },
-        {
-          "options": {
-            "always_enabled": true
-          },
-          "leading_diamond": "<transparent,background></>",
-          "trailing_diamond": "",
-          "template": " CONFIG NOT FOUND ",
-          "foreground": "p:white",
-          "background": "p:blue",
-          "type": "status",
-          "style": "diamond",
-          "background_templates": [
-            "p:red"
-          ]
         }
       ]
     },
