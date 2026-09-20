@@ -375,6 +375,10 @@ function gp() {
 
 # Initialize Oh My Posh if not running in Apple Terminal (which doesn't support it well)
 if [ "$TERM_PROGRAM" != "Apple_Terminal" ]; then
+  # Host name shown (and colour-coded) in the prompt, so it's easy to tell
+  # which machine a shell is on, e.g. local MacBook vs an ssh session.
+  export DGP_HOST="$(scutil --get LocalHostName 2>/dev/null || hostname)"
+  export POSH_THEME="${${(%):-%x}:A:h}/oh-my-posh-theme.json"
   eval "$(oh-my-posh init zsh)"
 fi
 
