@@ -390,6 +390,7 @@ export PATH="$(npm bin -g):$PATH"
 
 # Display command start and end times, and duration for commands that take longer than 5 seconds
 
+zmodload zsh/datetime
 autoload -Uz add-zsh-hook
 
 __cmd_start_epoch=0

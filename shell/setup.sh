@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="/Users/mwagstaff/dev/mac-tooling/shell"
+SCRIPT_DIR="${0:A:h}"
 
 typeset -A FILES
 FILES=(
