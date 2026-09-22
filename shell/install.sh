@@ -12,7 +12,6 @@ set -euo pipefail
 REPO_URL="https://github.com/mwagstaff/mac-tooling.git"
 REPO_DIR="${HOME}/dev/mac-tooling"
 BREW_PACKAGES=(zoxide jq bitwarden-cli node)
-OH_MY_POSH_TAP="jandedobbeleer/oh-my-posh"
 
 TABSET_REPO_URL="https://github.com/mwagstaff/iterm2-tab-set.git"
 TABSET_DIR="${HOME}/dev/iterm2-tab-set"
@@ -33,12 +32,17 @@ elif [[ -x /usr/local/bin/brew ]]; then
   eval "$(/usr/local/bin/brew shellenv)"
 fi
 
-echo "==> Installing oh-my-posh from its own tap (avoids conflicting with homebrew/core's formula)"
-brew tap "$OH_MY_POSH_TAP"
-if brew commands 2>/dev/null | grep -qx trust; then
-  brew trust "$OH_MY_POSH_TAP"
+echo "==> Installing oh-my-posh"
+if ! oh_my_posh_output=$(brew install oh-my-posh 2>&1); then
+  echo "$oh_my_posh_output"
+  if echo "$oh_my_posh_output" | grep -q "Formulae with the same name from different taps"; then
+    echo "==> Existing oh-my-posh is from a different tap; switching to homebrew/core"
+    brew uninstall oh-my-posh
+    brew install oh-my-posh
+  else
+    exit 1
+  fi
 fi
-brew install "${OH_MY_POSH_TAP}/oh-my-posh"
 
 echo "==> Installing required packages: ${BREW_PACKAGES[*]}"
 brew install "${BREW_PACKAGES[@]}"

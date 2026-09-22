@@ -16,7 +16,7 @@ This will:
 
 1. Check for Xcode Command Line Tools (required; the script exits with instructions if missing).
 2. Install [Homebrew](https://brew.sh) if it isn't already present.
-3. `brew install oh-my-posh` from its own [`jandedobbeleer/oh-my-posh`](https://github.com/JanDeDobbeleer/oh-my-posh) tap (trusting the tap first if the installed Homebrew requires it), then `brew install` the rest: `zoxide`, `jq`, `bitwarden-cli`, `node`.
+3. `brew install oh-my-posh` (from `homebrew/core`; if a prior install came from the upstream `jandedobbeleer/oh-my-posh` tap, it's swapped over automatically), then `brew install` the rest: `zoxide`, `jq`, `bitwarden-cli`, `node`.
 4. Clone this repo to `~/dev/mac-tooling` (or pull latest if it's already there).
 5. Clone [`iterm2-tab-set`](https://github.com/mwagstaff/iterm2-tab-set) to `~/dev/iterm2-tab-set` (or pull latest) and `npm link` it, which provides the `tabset` command.
 6. Run [`shell/setup.sh`](shell/setup.sh), which symlinks `~/.zshenv`, `~/.zshrc` and `~/.config/zsh/dev-git-prompt` to their copies in this repo, then reloads the shell.
