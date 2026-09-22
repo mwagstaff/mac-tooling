@@ -4,7 +4,7 @@ Personal Mac setup: shell config, prompt, and assorted scripts for managing a Ma
 
 ## Install shell & prompt config
 
-Sets up zsh (aliases, functions, Bitwarden-backed env vars), the oh-my-posh prompt (host-colour-coded, so you can tell machines apart at a glance), and the `dev-git-prompt` background git-status banner.
+Sets up zsh (aliases, functions, Bitwarden-backed env vars), the oh-my-posh prompt (host-colour-coded, so you can tell machines apart at a glance), the `dev-git-prompt` background git-status banner, and `tabset` (sets the terminal tab title/badge — see [`.zshrc`](shell/.zshrc)'s `setTitle` function).
 
 Run this on a fresh Mac:
 
@@ -16,9 +16,10 @@ This will:
 
 1. Check for Xcode Command Line Tools (required; the script exits with instructions if missing).
 2. Install [Homebrew](https://brew.sh) if it isn't already present.
-3. `brew install` the required tools: `oh-my-posh`, `zoxide`, `jq`, `bitwarden-cli`.
+3. `brew install oh-my-posh` from its own [`jandedobbeleer/oh-my-posh`](https://github.com/JanDeDobbeleer/oh-my-posh) tap (trusting the tap first if the installed Homebrew requires it), then `brew install` the rest: `zoxide`, `jq`, `bitwarden-cli`, `node`.
 4. Clone this repo to `~/dev/mac-tooling` (or pull latest if it's already there).
-5. Run [`shell/setup.sh`](shell/setup.sh), which symlinks `~/.zshenv`, `~/.zshrc` and `~/.config/zsh/dev-git-prompt` to their copies in this repo, then reloads the shell.
+5. Clone [`iterm2-tab-set`](https://github.com/mwagstaff/iterm2-tab-set) to `~/dev/iterm2-tab-set` (or pull latest) and `npm link` it, which provides the `tabset` command.
+6. Run [`shell/setup.sh`](shell/setup.sh), which symlinks `~/.zshenv`, `~/.zshrc` and `~/.config/zsh/dev-git-prompt` to their copies in this repo, then reloads the shell.
 
 Already have the repo cloned? Just run the last step directly:
 
