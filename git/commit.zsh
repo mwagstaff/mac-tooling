@@ -4,13 +4,14 @@ setopt NO_UNSET PIPE_FAIL
 
 typeset -r SCRIPT_NAME=${0:t}
 typeset -r DEFAULT_ROOT=${0:A:h:h:h}
+typeset -r DEFAULT_CODEX_MODEL=gpt-5.5
 typeset ai_commit_max_bytes=${AI_COMMIT_MAX_BYTES:-500000}
 case $ai_commit_max_bytes in
   *[!0-9]*) print -u2 "AI_COMMIT_MAX_BYTES must be a positive integer"; exit 2 ;;
 esac
 integer -r MAX_DIFF_BYTES=$ai_commit_max_bytes
 typeset root=${COMMIT_ROOT:-$DEFAULT_ROOT}
-typeset codex_model=${AI_COMMIT_MODEL:-}
+typeset codex_model=${AI_COMMIT_MODEL:-$DEFAULT_CODEX_MODEL}
 typeset jobs=${GIT_TOOL_JOBS:-4}
 typeset dry_run=false
 typeset test_messages=false
@@ -24,7 +25,7 @@ usage() {
   print "  --dry-run        Show which repositories would be committed and pushed."
   print "  --test-messages  Generate and display messages without committing or pushing."
   print
-  print "Set AI_COMMIT_MODEL to override the model from your Codex configuration."
+  print "Set AI_COMMIT_MODEL to override the Codex model (default: $DEFAULT_CODEX_MODEL)."
   print "Set GIT_TOOL_JOBS to control parallel workers (default: 4)."
   print "Set AI_COMMIT_MAX_BYTES to change the staged-diff size Codex will read as a"
   print "full patch (default: 500000). Above that size, Codex drafts the message from"
