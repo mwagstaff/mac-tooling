@@ -204,7 +204,7 @@ end
 -- App shortcuts: Ctrl-Alt
 
 BindAppShortcut("c", "Claude")
-BindAppShortcut("d", "Discord")
+BindAppShortcut("d", "Device Hub")
 BindAppShortcut("e", "Telegram")
 BindAppShortcut("f", "Finder")
 BindAppShortcut("g", "Google Chrome")
@@ -227,6 +227,7 @@ BindAppShortcut("z", "zoom.us")
 -- App shortcuts: Ctrl-Option
 
 BindAltShortcut("c", "ChatGPT Classic")
+BindAltShortcut("d", "Discord")
 BindAltShortcut("g", "Gmail")
 BindAltShortcut("s", "Simulator")
 
@@ -527,6 +528,56 @@ hs.hotkey.bind({"ctrl", "alt", "cmd"}, "s", function()
     end)
 
 end)
+
+
+-- Device Hub: Cmd-C takes a screenshot of the active device
+-- (Controls -> Screenshot) and copies it to the clipboard.
+
+local deviceHubBundleID = "com.apple.dt.Devices"
+
+local deviceHubCopyHotkey = hs.hotkey.new({"cmd"}, "c", function()
+    local deviceHub = hs.application.get(deviceHubBundleID)
+
+    if not deviceHub then
+        return
+    end
+
+    -- Start watching BEFORE asking Device Hub to create the screenshot.
+    startScreenshotWatcher()
+
+    local success = deviceHub:selectMenuItem({"Controls", "Screenshot"})
+
+    if not success then
+        hs.alert.show("❌ Screenshot command not found", 1)
+
+        if screenshotWatcher then
+            screenshotWatcher:stop()
+            screenshotWatcher = nil
+        end
+    end
+end)
+
+-- Only enable the Cmd-C override while Device Hub is frontmost.
+-- IMPORTANT: global reference so Hammerspoon doesn't garbage-collect it
+deviceHubWatcher = hs.application.watcher.new(function(_, eventType, app)
+    if eventType ~= hs.application.watcher.activated then
+        return
+    end
+
+    if app and app:bundleID() == deviceHubBundleID then
+        deviceHubCopyHotkey:enable()
+    else
+        deviceHubCopyHotkey:disable()
+    end
+end)
+
+deviceHubWatcher:start()
+
+-- Handle Device Hub already being frontmost when the config loads.
+local frontmostApp = hs.application.frontmostApplication()
+if frontmostApp and frontmostApp:bundleID() == deviceHubBundleID then
+    deviceHubCopyHotkey:enable()
+end
 
 
 local expansions = require("text-expansions")

@@ -42,3 +42,22 @@ Re-running either command is safe — existing correct symlinks are left alone, 
 - **`apps/`** — `install_apps.sh`, a Homebrew-based app installer for a fresh Mac.
 - **`dns/`** — `toggle-dns.sh` for switching between DHCP and manual DNS.
 - **`migration/`** — full machine backup/restore to iCloud Drive (shell & git config, SSH keys, Codex/Claude config, GitHub repos, Xcode signing assets). See [`migration/README.md`](migration/README.md).
+- **`app-store/`** — reusable screenshot converters for App Store Connect.
+
+## App Store screenshots
+
+The scripts require ImageMagick (`brew install imagemagick`). Give either one
+an input image; by default it writes a JPEG beside the original. An optional
+second argument chooses the output path.
+
+```bash
+~/dev/mac-tooling/app-store/prepare-watch-screenshot.sh "/path/to/Watch capture.png"
+~/dev/mac-tooling/app-store/prepare-iphone-screenshot.sh "/path/to/iPhone capture.png"
+```
+
+The Watch script produces 416 × 496 for the Apple Watch Series 11 gallery. The
+iPhone script produces 1320 × 2868 for the 6.9-inch iPhone gallery. Both fit
+the complete capture without cropping or stretching, fill any spare space with
+black, remove transparency and metadata, and verify the output dimensions.
+Check the size requested by App Store Connect before using either script for
+a different device gallery.
