@@ -68,6 +68,14 @@ else
   ln -s "$SOURCE_INIT" "$TARGET_INIT"
 fi
 
+# Device Hub doesn't expose its menu bar to Accessibility, so init.lua
+# triggers Controls -> Screenshot via this keyboard shortcut instead.
+# Device Hub is sandboxed (its own preferences aren't writable without sudo,
+# and it isn't listed in System Settings' App Shortcuts), so the shortcut is
+# set globally; it applies to any app with a menu item titled "Screenshot".
+echo "Assigning Cmd-Opt-Ctrl-S to the Screenshot menu item..."
+defaults write -g NSUserKeyEquivalents -dict-add "Screenshot" "@~^s"
+
 echo "Restarting Hammerspoon..."
 
 if pgrep -x "Hammerspoon" >/dev/null; then

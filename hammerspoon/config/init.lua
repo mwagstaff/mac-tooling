@@ -8,6 +8,9 @@
 -- PasswordSuffix = "PASSWORD_SUFFIX"
 require "secrets"
 
+-- Allow the `hs` command-line tool to talk to Hammerspoon
+require "hs.ipc"
+
 
 -- Helper functions
 
@@ -482,52 +485,10 @@ local function startScreenshotWatcher()
         if screenshotWatcher then
             screenshotWatcher:stop()
             screenshotWatcher = nil
+            hs.alert.show("❌ No screenshot saved to Desktop", 1.5)
         end
     end)
 end
-
-
-hs.hotkey.bind({"ctrl", "alt", "cmd"}, "s", function()
-
-    local previousApp = hs.application.frontmostApplication()
-    local xcode = hs.application.get("Xcode")
-
-    if not xcode then
-        hs.alert.show("❌ Xcode not running")
-        return
-    end
-
-    -- Start watching BEFORE asking Xcode to create the screenshot.
-    startScreenshotWatcher()
-
-    xcode:activate()
-
-    hs.timer.doAfter(0.2, function()
-
-        local success = xcode:selectMenuItem(
-            "^Take Screenshot of .+$",
-            true
-        )
-
-        if not success then
-            hs.alert.show("❌ Screenshot command not found", 1)
-
-            if screenshotWatcher then
-                screenshotWatcher:stop()
-                screenshotWatcher = nil
-            end
-        end
-
-        -- Return to whatever you were doing.
-        hs.timer.doAfter(0.15, function()
-            if previousApp and previousApp:isRunning() then
-                previousApp:activate()
-            end
-        end)
-
-    end)
-
-end)
 
 
 -- Device Hub: Cmd-C takes a screenshot of the active device
@@ -542,19 +503,17 @@ local deviceHubCopyHotkey = hs.hotkey.new({"cmd"}, "c", function()
         return
     end
 
+    hs.alert.show("📸 Taking screenshot…", 0.6)
+
     -- Start watching BEFORE asking Device Hub to create the screenshot.
     startScreenshotWatcher()
 
-    local success = deviceHub:selectMenuItem({"Controls", "Screenshot"})
-
-    if not success then
-        hs.alert.show("❌ Screenshot command not found", 1)
-
-        if screenshotWatcher then
-            screenshotWatcher:stop()
-            screenshotWatcher = nil
-        end
-    end
+    -- Device Hub doesn't expose its menu bar to Accessibility, so
+    -- selectMenuItem can't reach Controls -> Screenshot. Instead, trigger
+    -- the Cmd-Opt-Ctrl-S shortcut assigned to it via NSUserKeyEquivalents
+    -- (see hammerspoon/setup.sh). Posting it to Device Hub's pid doesn't
+    -- work, so send it system-wide (Device Hub is frontmost).
+    hs.eventtap.keyStroke({"cmd", "alt", "ctrl"}, "s")
 end)
 
 -- Only enable the Cmd-C override while Device Hub is frontmost.
