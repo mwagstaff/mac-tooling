@@ -44,6 +44,23 @@ Re-running either command is safe — existing correct symlinks are left alone, 
 - **`migration/`** — full machine backup/restore to iCloud Drive (shell & git config, SSH keys, Codex/Claude config, GitHub repos, Xcode signing assets). See [`migration/README.md`](migration/README.md).
 - **`app-store/`** — reusable screenshot converters for App Store Connect.
 
+## Commit and push with `gc`
+
+`gc` scans GitHub-backed projects under `~/dev`, commits working-tree changes,
+then fast-forwards the current branch, local `main`, and remote `main` to their
+most advanced compatible commit. It leaves the project on `main` and pushes
+explicitly to `main`, including commits that already existed before the run.
+Projects without a `main` branch get one from their current history.
+
+Diverged histories stop with an error so you can merge them manually and rerun
+`gc`. It never force-pushes or deletes branches. Detached checkouts and operations
+already in progress are skipped; a `main` checked out in another worktree cannot
+be switched to. Other inactive branches are not automatically merged.
+
+Use `gc --dry-run` to preview the actions without changing files or fetching,
+or `gc --test-messages` to preview commit messages. Set `COMMIT_ROOT` to limit
+execution to another directory or a single repository.
+
 ## App Store screenshots
 
 The scripts require ImageMagick (`brew install imagemagick`). Give either one

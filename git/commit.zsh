@@ -19,7 +19,9 @@ typeset test_messages=false
 usage() {
   print "Usage: $SCRIPT_NAME [--dry-run | --test-messages]"
   print
-  print "Commit and push changes in every GitHub-backed repository under $DEFAULT_ROOT."
+  print "Commit changes and push main in every GitHub-backed repository under $DEFAULT_ROOT."
+  print "Fast-forward the current branch into main, then push main (including existing commits)."
+  print "Diverged branches require a manual merge; no force-pushes are performed."
   print "Set COMMIT_ROOT to scan a different directory."
   print
   print "  --dry-run        Show which repositories would be committed and pushed."
@@ -68,7 +70,7 @@ is_github_url() {
      $url == git://github.com/* ]]
 }
 
-typeset selected_remote selected_upstream
+typeset selected_remote
 
 select_github_remote() {
   local upstream remote url
@@ -76,7 +78,6 @@ select_github_remote() {
   local -A seen
 
   selected_remote=""
-  selected_upstream=""
   upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null) || upstream=""
 
   if [[ -n $upstream ]]; then
@@ -92,9 +93,6 @@ select_github_remote() {
     is_github_url "$url" || continue
 
     selected_remote=$remote
-    if [[ $upstream == "$remote/"* ]]; then
-      selected_upstream=${upstream#*/}
-    fi
     return 0
   done
 
@@ -453,6 +451,36 @@ save_worker_result() {
   print -r -- "$2 $3 $4 $5" > "$1"
 }
 
+consolidate_main() {
+  local target candidate
+
+  if [[ -n $(git status --porcelain=v1) ]]; then
+    print -u2 "    Cannot switch to main: working-tree changes remain after committing"
+    return 1
+  fi
+  if ! git fetch --prune "$selected_remote"; then
+    print -u2 "    Fetch failed; local commits are preserved"
+    return 1
+  fi
+  target=$(git rev-parse --verify HEAD) || return 1
+  for candidate in refs/heads/main "refs/remotes/$selected_remote/main"; do
+    git show-ref --verify --quiet "$candidate" || continue
+    if git merge-base --is-ancestor "$target" "$candidate"; then
+      target=$(git rev-parse "$candidate") || return 1
+    elif ! git merge-base --is-ancestor "$candidate" "$target"; then
+      print -u2 "    Cannot fast-forward main: $candidate and the current branch have diverged."
+      print -u2 "    Merge them manually, then rerun gc. Local commits are preserved."
+      return 1
+    fi
+  done
+
+  if git show-ref --verify --quiet refs/heads/main; then
+    git switch main && git merge --ff-only "$target" || return 1
+  else
+    git switch -c main "$target" || return 1
+  fi
+}
+
 process_repository() {
   local repo=$1 result_file=$2 branch head_before tree_before commit_oid
   local repo_label status_output commit_output_file commit_line
@@ -473,11 +501,6 @@ process_repository() {
     print -- "==> $repo_label"
     print -u2 "    Could not read working-tree status"
     (( repo_failed++ ))
-    save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
-    return
-  fi
-
-  if [[ -z $status_output ]] && ! operation_in_progress; then
     save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
     return
   fi
@@ -522,81 +545,78 @@ process_repository() {
   fi
 
   if $dry_run; then
-    print "    Would commit all working-tree changes"
-    print "    Would push $branch to $selected_remote"
+    [[ -n $status_output ]] && print "    Would commit all working-tree changes"
+    print "    Would fetch $selected_remote, fast-forward $branch and main where possible, and push main"
     save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
     return
   fi
 
-  if ! git add -A; then
-    print -u2 "    Failed to stage changes"
-    (( repo_failed++ ))
-    save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
-    return
-  fi
-
-  if git diff --cached --quiet; then
-    print "    No committable changes after staging"
-    save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
-    return
-  fi
-
-  head_before=$(current_head_oid)
-  if ! tree_before=$(git write-tree); then
-    print -u2 "    Failed to snapshot staged changes"
-    (( repo_failed++ ))
-    save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
-    return
-  fi
-
-  generate_commit_message
-  if [[ $(git symbolic-ref --quiet --short HEAD 2>/dev/null) != $branch ||
-        $(current_head_oid) != $head_before ||
-        $(git write-tree) != $tree_before ]]; then
-    print -u2 "    Repository changed while generating the message; skipped"
-    (( repo_failed++ ))
-    save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
-    return
-  fi
-  [[ -n $message_error ]] && print "    Codex unavailable: $message_error"
-  print "    Committing: $commit_subject [$message_source]"
-  commit_output_file="$result_file.commit-output"
-  if print -r -- "$commit_message" | git commit -F - > "$commit_output_file" 2>&1; then
-    (( repo_committed++ ))
-    while IFS= read -r commit_line || [[ -n $commit_line ]]; do
-      if [[ $commit_line == \[*\]\ * && ${commit_line#*] } == "$commit_subject" ]]; then
-        continue
-      fi
-      print -r -- "$commit_line"
-    done < "$commit_output_file"
-  else
-    [[ -s $commit_output_file ]] && cat "$commit_output_file"
-    print -u2 "    Commit failed"
-    (( repo_failed++ ))
-    save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
-    return
-  fi
-
-  commit_oid=$(git rev-parse HEAD)
-  if [[ $(git symbolic-ref --quiet --short HEAD 2>/dev/null) != $branch ||
-        $(git rev-parse "${commit_oid}^{tree}") != $tree_before ]]; then
-    print -u2 "    Commit differs from the preview; review local commit $commit_oid before pushing"
-    (( repo_failed++ ))
-    save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
-    return
-  fi
-
-  if [[ -n $selected_upstream ]]; then
-    if git push "$selected_remote" "HEAD:$selected_upstream"; then
-      (( repo_pushed++ ))
-    else
-      print -u2 "    Push failed"
+  if [[ -n $status_output ]]; then
+    if ! git add -A; then
+      print -u2 "    Failed to stage changes"
       (( repo_failed++ ))
+      save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
+      return
     fi
-  elif git push --set-upstream "$selected_remote" "$branch"; then
+
+    if git diff --cached --quiet; then
+      print "    No committable changes after staging"
+    else
+
+      head_before=$(current_head_oid)
+      if ! tree_before=$(git write-tree); then
+        print -u2 "    Failed to snapshot staged changes"
+        (( repo_failed++ ))
+        save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
+        return
+      fi
+
+      generate_commit_message
+      if [[ $(git symbolic-ref --quiet --short HEAD 2>/dev/null) != $branch ||
+            $(current_head_oid) != $head_before ||
+            $(git write-tree) != $tree_before ]]; then
+        print -u2 "    Repository changed while generating the message; skipped"
+        (( repo_failed++ ))
+        save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
+        return
+      fi
+      [[ -n $message_error ]] && print "    Codex unavailable: $message_error"
+      print "    Committing: $commit_subject [$message_source]"
+      commit_output_file="$result_file.commit-output"
+      if print -r -- "$commit_message" | git commit -F - > "$commit_output_file" 2>&1; then
+        (( repo_committed++ ))
+        while IFS= read -r commit_line || [[ -n $commit_line ]]; do
+          if [[ $commit_line == \[*\]\ * && ${commit_line#*] } == "$commit_subject" ]]; then
+            continue
+          fi
+          print -r -- "$commit_line"
+        done < "$commit_output_file"
+      else
+        [[ -s $commit_output_file ]] && cat "$commit_output_file"
+        print -u2 "    Commit failed"
+        (( repo_failed++ ))
+        save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
+        return
+      fi
+
+      commit_oid=$(git rev-parse HEAD)
+      if [[ $(git symbolic-ref --quiet --short HEAD 2>/dev/null) != $branch ||
+            $(git rev-parse "${commit_oid}^{tree}") != $tree_before ]]; then
+        print -u2 "    Commit differs from the preview; review local commit $commit_oid before pushing"
+        (( repo_failed++ ))
+        save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
+        return
+      fi
+
+    fi
+  fi
+
+  if ! consolidate_main; then
+    (( repo_failed++ ))
+  elif git -c push.followTags=false push --set-upstream "$selected_remote" refs/heads/main:refs/heads/main; then
     (( repo_pushed++ ))
   else
-    print -u2 "    Push failed"
+    print -u2 "    Push to main failed; local commits are preserved"
     (( repo_failed++ ))
   fi
 
