@@ -448,7 +448,7 @@ done
 repositories=("${independent_repositories[@]}")
 
 save_worker_result() {
-  print -r -- "$2 $3 $4 $5" > "$1"
+  print -r -- "$2 $3 $4 $5 ${6:-0}" > "$1"
 }
 
 consolidate_main() {
@@ -482,10 +482,10 @@ consolidate_main() {
 }
 
 process_repository() {
-  local repo=$1 result_file=$2 branch head_before tree_before commit_oid
+  local repo=$1 result_file=$2 branch head_before tree_before commit_oid main_before main_after remote_main
   local repo_label status_output commit_output_file commit_line
   local commit_subject commit_body commit_message message_source message_error
-  integer repo_committed=0 repo_pushed=0 repo_skipped=0 repo_failed=0
+  integer repo_committed=0 repo_pushed=0 repo_skipped=0 repo_failed=0 repo_updated=0
 
   repo_label=${repo#$root/}
 
@@ -611,21 +611,27 @@ process_repository() {
     fi
   fi
 
+  main_before=$(git rev-parse --verify refs/heads/main 2>/dev/null) || main_before=""
   if ! consolidate_main; then
     (( repo_failed++ ))
-  elif git -c push.followTags=false push --set-upstream "$selected_remote" refs/heads/main:refs/heads/main; then
-    (( repo_pushed++ ))
   else
-    print -u2 "    Push to main failed; local commits are preserved"
-    (( repo_failed++ ))
+    main_after=$(git rev-parse --verify refs/heads/main)
+    [[ $main_after != $main_before ]] && repo_updated=1
+    remote_main=$(git rev-parse --verify "refs/remotes/$selected_remote/main" 2>/dev/null) || remote_main=""
+    if git -c push.followTags=false push --set-upstream "$selected_remote" refs/heads/main:refs/heads/main; then
+      [[ $main_after != $remote_main ]] && (( repo_pushed++ ))
+    else
+      print -u2 "    Push to main failed; local commits are preserved"
+      (( repo_failed++ ))
+    fi
   fi
 
-  save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed
+  save_worker_result "$result_file" $repo_committed $repo_pushed $repo_skipped $repo_failed $repo_updated
 }
 
 flush_batch() {
   local batch_index output_file result_file
-  local repo_committed repo_pushed repo_skipped repo_failed
+  local repo_committed repo_pushed repo_skipped repo_failed repo_updated
 
   for (( batch_index = 1; batch_index <= ${#batch_pids}; batch_index++ )); do
     wait "${batch_pids[$batch_index]}" 2>/dev/null || true
@@ -633,19 +639,21 @@ flush_batch() {
   for (( batch_index = 1; batch_index <= ${#batch_outputs}; batch_index++ )); do
     output_file=${batch_outputs[$batch_index]}
     result_file=${batch_results[$batch_index]}
-    if [[ -s $output_file ]]; then
-      (( displayed_repositories > 0 )) && print
-      cat "$output_file"
-      (( displayed_repositories++ ))
-    fi
     if [[ -s $result_file ]]; then
-      read -r repo_committed repo_pushed repo_skipped repo_failed < "$result_file"
+      read -r repo_committed repo_pushed repo_skipped repo_failed repo_updated < "$result_file"
       (( committed += repo_committed ))
       (( pushed += repo_pushed ))
       (( skipped += repo_skipped ))
       (( failed += repo_failed ))
     else
+      repo_failed=1
       (( failed++ ))
+    fi
+    if [[ -s $output_file ]] &&
+        { $dry_run || $test_messages || (( repo_committed + repo_pushed + repo_skipped + repo_failed + repo_updated > 0 )); }; then
+      (( displayed_repositories > 0 )) && print
+      cat "$output_file"
+      (( displayed_repositories++ ))
     fi
   done
   batch_pids=()

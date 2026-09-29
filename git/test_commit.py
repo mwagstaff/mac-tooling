@@ -69,9 +69,17 @@ class CommitMainTests(unittest.TestCase):
 
     def test_clean_unpushed_commit(self):
         self.commit("unpushed")
-        self.run_gc()
+        output = self.run_gc()
+        self.assertIn("==> ", output)
+        self.assertIn("0 committed, 1 pushed", output)
         self.assert_pushed_main()
         self.assertNotEqual(self.git("rev-parse", "HEAD"), self.initial)
+
+    def test_up_to_date_repository_is_silent(self):
+        output = self.run_gc()
+        self.assertNotIn("==> ", output)
+        self.assertNotIn("Already up to date", output)
+        self.assertIn("0 committed, 0 pushed, 0 skipped, 0 failed", output)
 
     def test_dirty_feature_pushes_only_main(self):
         self.git("switch", "-c", "feature")
@@ -93,7 +101,9 @@ class CommitMainTests(unittest.TestCase):
         self.commit("remote-work")
         self.git("push", "origin", "HEAD:main")
         self.git("switch", "main")
-        self.run_gc()
+        output = self.run_gc()
+        self.assertIn("==> ", output)
+        self.assertIn("0 committed, 0 pushed", output)
         self.assert_pushed_main()
         self.assertTrue((self.repo / "remote-work").exists())
 

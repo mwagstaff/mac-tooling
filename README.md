@@ -51,6 +51,7 @@ then fast-forwards the current branch, local `main`, and remote `main` to their
 most advanced compatible commit. It leaves the project on `main` and pushes
 explicitly to `main`, including commits that already existed before the run.
 Projects without a `main` branch get one from their current history.
+Projects that are already up to date are omitted from the output.
 
 Diverged histories stop with an error so you can merge them manually and rerun
 `gc`. It never force-pushes or deletes branches. Detached checkouts and operations
