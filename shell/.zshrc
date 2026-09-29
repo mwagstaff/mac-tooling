@@ -412,7 +412,7 @@ __precmd() {
 
     [[ $__cmd_start_epoch -eq 0 ]] && return
 
-    local end_time elapsed status
+    local end_time elapsed completion_status
 
     end_time=$(date '+%H:%M:%S')
     elapsed=$((EPOCHSECONDS - __cmd_start_epoch))
@@ -428,15 +428,15 @@ __precmd() {
     (( elapsed < __cmd_threshold )) && return
 
     if [[ $interrupted -eq 1 || $exit_code -eq 130 ]]; then
-        status="Interrupted"
+        completion_status="Interrupted"
     elif [[ $exit_code -eq 0 ]]; then
-        status="Completed"
+        completion_status="Completed"
     else
-        status="Failed, exit $exit_code"
+        completion_status="Failed, exit $exit_code"
     fi
 
     printf "\n✓ %s — started %s, finished %s, took %ss\n\n" \
-        "$status" "$start_time" "$end_time" "$elapsed"
+        "$completion_status" "$start_time" "$end_time" "$elapsed"
 }
 
 TRAPINT() {
