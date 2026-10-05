@@ -56,6 +56,11 @@ function cleanup() {
   git branch -r | grep "origin/claude/" | sed 's|origin/||' | xargs -I{} git push origin --delete {}
 }
 
+# Deploy function
+function d() {
+  ~/dev/server-tooling/deploy/node_project.zsh $*
+}
+
 # Set the terminal title to the current diretory using tabset
 function setTitle() {
   dir=$(basename "$PWD")
