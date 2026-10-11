@@ -394,99 +394,94 @@ timer.doEvery(60, function()
 end)
 
 
--- Ctrl + Option + Cmd + S
--- Take screenshot of the connected iPhone in Xcode,
--- return to previous app,
--- then copy the resulting PNG image to the clipboard.
+-- Screenshot helpers: wait for a new PNG on the Desktop,
+-- copy it to the clipboard, then delete the file.
 
 local screenshotDir = os.getenv("HOME") .. "/Desktop"
 
-local screenshotWatcher = nil
-local screenshotStartedAt = nil
-local screenshotCopied = false
+local screenshotPoller = nil
+local screenshotTimeout = nil
+
+local function listScreenshotPNGs()
+    local files = {}
+
+    for file in hs.fs.dir(screenshotDir) do
+        if file:lower():match("%.png$") then
+            files[file] = true
+        end
+    end
+
+    return files
+end
+
+local function stopScreenshotWatcher()
+    if screenshotPoller then
+        screenshotPoller:stop()
+        screenshotPoller = nil
+    end
+
+    if screenshotTimeout then
+        screenshotTimeout:stop()
+        screenshotTimeout = nil
+    end
+end
 
 local function copyScreenshotToClipboard(path)
-    -- Give Xcode a tiny moment to finish writing the PNG.
-    hs.timer.doAfter(0.15, function()
+    local image = hs.image.imageFromPath(path)
 
-        local image = hs.image.imageFromPath(path)
+    if not image then
+        hs.alert.show("❌ Could not load screenshot", 1)
+        print("Could not load screenshot:", path)
+        return
+    end
 
-        if not image then
-            print("Could not load screenshot:", path)
+    if hs.pasteboard.writeObjects(image) then
+        os.remove(path)
+        hs.alert.show("📋 Screenshot copied", 0.6)
+        print("Screenshot copied to clipboard and deleted:", path)
+    else
+        hs.alert.show("❌ Clipboard copy failed", 1)
+        print("Failed to copy screenshot:", path)
+    end
+end
+
+local function startScreenshotWatcher()
+    stopScreenshotWatcher()
+
+    -- Poll rather than use hs.pathwatcher: FSEvents takes ~3s to report
+    -- a new file on the Desktop, polling notices it within ~0.1s.
+    local existing = listScreenshotPNGs()
+    local pendingPath = nil
+    local pendingSize = nil
+
+    screenshotPoller = hs.timer.doEvery(0.1, function()
+        if not pendingPath then
+            for file in pairs(listScreenshotPNGs()) do
+                if not existing[file] then
+                    pendingPath = screenshotDir .. "/" .. file
+                    break
+                end
+            end
+
             return
         end
 
-        local success = hs.pasteboard.writeObjects(image)
+        -- Only copy once the file has stopped growing,
+        -- i.e. Device Hub has finished writing it.
+        local size = hs.fs.attributes(pendingPath, "size")
 
-        if success then
-            screenshotCopied = true
-            hs.alert.show("📋 Screenshot copied", 0.6)
-            print("Screenshot copied to clipboard:", path)
+        if size and size > 0 and size == pendingSize then
+            stopScreenshotWatcher()
+            copyScreenshotToClipboard(pendingPath)
         else
-            hs.alert.show("❌ Clipboard copy failed", 1)
-            print("Failed to copy screenshot:", path)
+            pendingSize = size
         end
     end)
-end
 
-
-local function startScreenshotWatcher()
-    screenshotStartedAt = hs.timer.secondsSinceEpoch()
-    screenshotCopied = false
-
-    -- Stop any previous watcher.
-    if screenshotWatcher then
-        screenshotWatcher:stop()
-        screenshotWatcher = nil
-    end
-
-    screenshotWatcher = hs.pathwatcher.new(
-        screenshotDir,
-        function(paths)
-
-            if screenshotCopied then
-                return
-            end
-
-            for _, path in ipairs(paths) do
-
-                -- Only consider PNG files.
-                if path:lower():match("%.png$") then
-
-                    local attrs = hs.fs.attributes(path)
-
-                    if attrs then
-                        local modified = attrs.modification or 0
-
-                        -- Only accept a file created/modified after
-                        -- we initiated this screenshot.
-                        if modified >= screenshotStartedAt - 1 then
-
-                            copyScreenshotToClipboard(path)
-
-                            -- We only want one screenshot.
-                            if screenshotWatcher then
-                                screenshotWatcher:stop()
-                                screenshotWatcher = nil
-                            end
-
-                            return
-                        end
-                    end
-                end
-            end
-        end
-    )
-
-    screenshotWatcher:start()
-
-    -- Safety timeout: don't leave the watcher running forever.
-    hs.timer.doAfter(10, function()
-        if screenshotWatcher then
-            screenshotWatcher:stop()
-            screenshotWatcher = nil
-            hs.alert.show("❌ No screenshot saved to Desktop", 1.5)
-        end
+    -- Safety timeout: don't poll forever.
+    screenshotTimeout = hs.timer.doAfter(10, function()
+        stopScreenshotWatcher()
+        hs.alert.show("❌ No screenshot saved to Desktop", 1.5)
     end)
 end
 

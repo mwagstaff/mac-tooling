@@ -60,6 +60,15 @@ function cleanup() {
 function d() {
   ~/dev/server-tooling/deploy/node_project.zsh $*
 }
+# Pass wildcard project queries (e.g. kids*) through to the deploy script unexpanded
+alias d='noglob d'
+alias ./deploy/node_project.zsh='noglob ./deploy/node_project.zsh'
+alias deploy/node_project.zsh='noglob deploy/node_project.zsh'
+
+# Tail deployment logs: "t planner" (all), "t planner -e" (errors only), "t planner -n 500", "t planner sky"
+function t() {
+  TAIL_SHOW_CONTROLS=0 ~/dev/server-tooling/deploy/tail_node_project.zsh "$@"
+}
 
 # Set the terminal title to the current diretory using tabset
 function setTitle() {
@@ -437,7 +446,10 @@ __precmd() {
     elif [[ $exit_code -eq 0 ]]; then
         completion_status="Completed"
     else
-        completion_status="Failed, exit $exit_code"
+        printf "\n\e[1;31m❌ FAILED, exit %s — started %s, finished %s, took %ss\e[0m\n\n" \
+            "$exit_code" "$start_time" "$end_time" "$elapsed"
+        afplay /System/Library/Sounds/Basso.aiff &!
+        return
     fi
 
     printf "\n✓ %s — started %s, finished %s, took %ss\n\n" \
