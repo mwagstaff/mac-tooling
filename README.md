@@ -62,6 +62,11 @@ Use `gc --dry-run` to preview the actions without changing files or fetching,
 or `gc --test-messages` to preview commit messages. Set `COMMIT_ROOT` to limit
 execution to another directory or a single repository.
 
+Commit messages use Codex's saved ChatGPT login with `gpt-5.6-luna`. Set
+`AI_COMMIT_MODEL` to override the model for `gc`. If Codex is unavailable or
+message generation fails, `gc` reports the reason and uses a basic message
+based on changed file names, then continues committing and pushing.
+
 ## App Store screenshots
 
 The scripts require ImageMagick (`brew install imagemagick`). Give either one

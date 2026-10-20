@@ -4,7 +4,7 @@ setopt NO_UNSET PIPE_FAIL
 
 typeset -r SCRIPT_NAME=${0:t}
 typeset -r DEFAULT_ROOT=${0:A:h:h:h}
-typeset -r DEFAULT_CODEX_MODEL=gpt-5.5
+typeset -r DEFAULT_CODEX_MODEL=gpt-5.6-luna
 typeset ai_commit_max_bytes=${AI_COMMIT_MAX_BYTES:-500000}
 case $ai_commit_max_bytes in
   *[!0-9]*) print -u2 "AI_COMMIT_MAX_BYTES must be a positive integer"; exit 2 ;;

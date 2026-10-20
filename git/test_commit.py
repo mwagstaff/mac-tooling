@@ -1,9 +1,11 @@
 """Exercise gc against disposable repositories; no GitHub or Codex calls."""
+import json
 import os
 from pathlib import Path
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -24,6 +26,7 @@ class CommitMainTests(unittest.TestCase):
                         GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0",
                         GIT_AUTHOR_NAME="Test", GIT_AUTHOR_EMAIL="test@example.com",
                         GIT_COMMITTER_NAME="Test", GIT_COMMITTER_EMAIL="test@example.com")
+        self.env.pop("AI_COMMIT_MODEL", None)
         # Only remote classification is stubbed; fetch, commit, merge and push use real Git.
         wrapper = self.bin / "git"
         wrapper.write_text('#!/bin/sh\nif [ "$1" = remote ] && [ "$2" = get-url ]; then\n'
@@ -66,6 +69,49 @@ class CommitMainTests(unittest.TestCase):
         remote_head = self.command(GIT, "--git-dir", str(self.remote), "rev-parse", "main")
         self.assertEqual(self.git("rev-parse", "HEAD"), remote_head)
         self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def enable_codex(self):
+        args_file = self.root / "codex-args.json"
+        self.env["TEST_CODEX_ARGS"] = str(args_file)
+        (self.bin / "codex").write_text(f"#!{sys.executable}\n" + '''import json
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if "login" in args:
+    print("Logged in using ChatGPT")
+    sys.exit(0)
+Path(os.environ["TEST_CODEX_ARGS"]).write_text(json.dumps(args))
+if "gpt-5.5" in args:
+    print("ERROR: The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.", file=sys.stderr)
+    sys.exit(1)
+sys.stdin.read()
+Path(args[args.index("--output-last-message") + 1]).write_text("fix: update pending changes\\n")
+''')
+        return args_file
+
+    def test_codex_uses_supported_default_model(self):
+        args_file = self.enable_codex()
+        (self.repo / "pending").write_text("pending\n")
+        output = self.run_gc()
+        self.assertIn("Committing: fix: update pending changes [Codex CLI (gpt-5.6-luna)]", output)
+        args = json.loads(args_file.read_text())
+        self.assertEqual(args[args.index("--model") + 1], "gpt-5.6-luna")
+        self.assertEqual(self.git("log", "-1", "--format=%s"), "fix: update pending changes")
+        self.assert_pushed_main()
+
+    def test_codex_model_override_in_message_preview(self):
+        args_file = self.enable_codex()
+        self.env["AI_COMMIT_MODEL"] = "test-model"
+        (self.repo / "pending").write_text("pending\n")
+        before = self.git("status", "--porcelain")
+        output = self.run_gc("--test-messages")
+        self.assertIn("Source:  Codex CLI (test-model)", output)
+        args = json.loads(args_file.read_text())
+        self.assertEqual(args[args.index("--model") + 1], "test-model")
+        self.assertEqual(self.git("status", "--porcelain"), before)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.initial)
 
     def test_clean_unpushed_commit(self):
         self.commit("unpushed")
