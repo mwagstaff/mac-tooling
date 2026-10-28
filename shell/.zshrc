@@ -26,7 +26,6 @@ alias gs="~/dev/mac-tooling/git/status.zsh"
 
 # Bitwarden
 BW_ENV_FOLDER_NAME="${BW_ENV_FOLDER_NAME:-Local environment variables}"
-BW_ENV_CACHE_TTL_SECONDS="${BW_ENV_CACHE_TTL_SECONDS:-900}"
 BW_ENV_CACHE_FILE="${BW_ENV_CACHE_FILE:-${XDG_CACHE_HOME:-$HOME/.cache}/server-tooling/bitwarden-env}"
 BW_SESSION_CACHE_FILE="${BW_SESSION_CACHE_FILE:-${XDG_CACHE_HOME:-$HOME/.cache}/server-tooling/bitwarden-session}"
 
@@ -259,24 +258,6 @@ bw_ensure_session() {
   return 0
 }
 
-bw_file_mtime() {
-  [ "$#" -eq 1 ] || return
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
-}
-
-bw_env_cache_is_fresh() {
-  [ -f "$BW_ENV_CACHE_FILE" ] || return 1
-
-  local now
-  local modified
-  local age
-  now="$(date +%s)" || return 1
-  modified="$(bw_file_mtime "$BW_ENV_CACHE_FILE")" || return 1
-  age=$(( now - modified ))
-
-  [ "$age" -ge 0 ] && [ "$age" -lt "$BW_ENV_CACHE_TTL_SECONDS" ]
-}
-
 bw_source_env_cache() {
   [ -f "$BW_ENV_CACHE_FILE" ] || return 1
   source "$BW_ENV_CACHE_FILE"
@@ -354,8 +335,9 @@ bw_refresh_env_cache() {
   bw_source_env_cache
 }
 
+# The env file is only built when missing; run 'bw-reload' to pull changes from Bitwarden.
 bw_load_env_vars() {
-  if bw_env_cache_is_fresh; then
+  if [ -f "$BW_ENV_CACHE_FILE" ]; then
     bw_source_env_cache
     return
   fi
@@ -368,7 +350,7 @@ bw-reload() {
     unset "${BW_ENV_CACHE_VARS[@]}"
   fi
 
-  rm -f "$BW_ENV_CACHE_FILE"
+  # Keep the existing env file until the refreshed one replaces it, so a failed refresh loses nothing.
   bw_refresh_env_cache 1
 }
 

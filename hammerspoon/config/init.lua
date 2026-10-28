@@ -3,7 +3,6 @@
 -- Requires
 
 -- secrets.lua not included in version control, and should contain the following:
--- LoginUrl = "WORK_LOGIN_URL"
 -- PasswordPrefix = "PASSWORD_PREFIX"
 -- PasswordSuffix = "PASSWORD_SUFFIX"
 require "secrets"
@@ -291,27 +290,16 @@ end
 
 -- Login to work
 hs.hotkey.bind({"ctrl", "cmd"}, "l", function()
-
-    local function citrixIsActuallyOpen()
-    local app = hs.application.get("Citrix Viewer")
-    if not app then return false end
-    return app:mainWindow() ~= nil
-    end
-
-    -- If Citrix Viewer is running, focus it
-    if citrixIsActuallyOpen() then
-        local app = hs.application.get("Citrix Viewer")
-        app:activate()
-        hs.alert.show("Citrix Viewer", 0.5)
-    else
-        -- Load the login page, and hit the login button
-        hs.alert.show("Logging in to work...", 0.5)
-        hs.urlevent.openURL(LoginUrl)
-        hs.timer.doAfter(5, function()
-            hs.eventtap.keyStroke({}, "tab")
-            hs.eventtap.keyStroke({}, "tab")
-            hs.eventtap.keyStroke({}, "return")
-        end)
+    -- A fresh interactive shell loads the vault-backed environment and gives
+    -- the script a terminal for masked input and clipboard token detection.
+    local ok = hs.osascript.applescript([[
+        tell application "iTerm"
+            activate
+            create window with default profile command "/bin/zsh -lic '\"$HOME/dev/mac-tooling/work-login/login.sh\"'"
+        end tell
+    ]])
+    if not ok then
+        hs.alert.show("Could not open the work login script in iTerm.")
     end
 end)
 

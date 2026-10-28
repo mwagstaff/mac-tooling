@@ -43,6 +43,7 @@ Re-running either command is safe — existing correct symlinks are left alone, 
 - **`dns/`** — `toggle-dns.sh` for switching between DHCP and manual DNS.
 - **`migration/`** — full machine backup/restore to iCloud Drive (shell & git config, SSH keys, Codex/Claude config, GitHub repos, Xcode signing assets). See [`migration/README.md`](migration/README.md).
 - **`app-store/`** — reusable screenshot converters for App Store Connect.
+- **`work-login/`** — RSA SecurID work-login and Citrix launcher; see [setup and security notes](work-login/README.md).
 
 ## Commit and push with `gc`
 
