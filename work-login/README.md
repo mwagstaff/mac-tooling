@@ -17,7 +17,7 @@ python3.14 -m venv .venv
 
 No separate Chromium download is needed: Playwright uses installed Google Chrome.
 After updating the script, rerun the `pip install -r requirements.txt` command
-above to install any new dependencies, including the masked prompt and macOS
+above to install any new dependencies, including the token prompt and macOS
 clipboard support.
 
 Supply these exported variables through your existing password-manager-backed
@@ -48,11 +48,19 @@ script does not create a `.env` file or change your password manager setup.
 ~/dev/mac-tooling/work-login/login.sh
 ```
 
-Enter a fresh RSA token at the terminal prompt: each character appears as `*`,
-and Backspace works normally. Press Enter to submit typed or pasted input.
+Enter a fresh RSA token at the terminal prompt. The digits are shown (the token
+alone is not a secret) so you can check them, and Backspace works normally. Press Enter to submit typed or pasted input.
 Alternatively, **copy a new token from the RSA app while the prompt is open**:
 the script detects the clipboard change and automatically continues if the
 new text is exactly six ASCII digits. No paste or Enter is needed in that case.
+Or **hold the phone up to the Mac's camera**: a small preview window opens
+when the prompt does, and the token is entered and submitted automatically as
+soon as it is read, with no key press. This uses
+[`camera-otp`](../camera-otp/camera-otp.sh) (on-device OCR, no Internet), which
+compiles itself on the first run and needs your terminal app to have Camera
+permission. The window does not take keyboard focus, so typing still works, and
+the camera is switched off as soon as the prompt finishes by any route. If the
+camera is unavailable or you close its window, typing and the clipboard still work.
 Leading zeroes are preserved. The token and prefix must still total exactly
 12 digits; manual entry continues to support 6- or 8-digit tokens.
 
@@ -64,7 +72,7 @@ text is eligible; the script cannot verify which app copied it. A matching
 copy replaces any partially typed token and immediately submits the prompt.
 Watching stops on submission or cancellation, and the script never clears or
 modifies your clipboard. If clipboard access fails, manual entry remains
-available. The token is masked and is not stored in prompt history.
+available. The token is not stored in prompt history.
 
 The script opens Chrome, waits for the redirected form, unchecks Microsoft
 Authenticator, selects EMEA, fills the login form, and submits once. It waits
@@ -115,9 +123,10 @@ cd ~/dev/mac-tooling/work-login
 
 Tests use dummy credentials and intercepted browser requests. They do not
 contact the real portal, submit a real login or launch Citrix. Clipboard tests use a private
-pasteboard, leaving the system clipboard untouched.
+pasteboard, leaving the system clipboard untouched, and camera tests use a stub command
+instead of the real camera.
 
 Implementation references: [Playwright browser contexts](https://playwright.dev/python/docs/api/class-browser#browser-new-context)
 and [download completion](https://playwright.dev/python/docs/downloads),
 [Apple's pasteboard change counter](https://sosumi.ai/documentation/appkit/nspasteboard/changecount),
-and [masked terminal input](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/asking_for_input.html#password-input).
+and [terminal input](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/asking_for_input.html).
