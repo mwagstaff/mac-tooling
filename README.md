@@ -44,6 +44,7 @@ Re-running either command is safe — existing correct symlinks are left alone, 
 - **`migration/`** — full machine backup/restore to iCloud Drive (shell & git config, SSH keys, Codex/Claude config, GitHub repos, Xcode signing assets). See [`migration/README.md`](migration/README.md).
 - **`app-store/`** — reusable screenshot converters for App Store Connect.
 - **`work-login/`** — RSA SecurID work-login and Citrix launcher; see [setup and security notes](work-login/README.md).
+- **`speak-digits/`** — offline voice-to-digits: `speak-digits.sh` listens for a spoken 6-digit number (e.g. a 2FA code) and prints it. Run `setup.sh` once to create the venv and download the ~70MB Vosk model; after that it needs no Internet.
 
 ## Commit and push with `gc`
 
