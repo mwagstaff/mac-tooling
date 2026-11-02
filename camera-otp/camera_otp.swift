@@ -10,12 +10,10 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     private let queue = DispatchQueue(label: "camera-otp.frames", qos: .userInteractive)
     private let handler = VNSequenceRequestHandler()
-    private let request: VNRecognizeTextRequest = {
-        let r = VNRecognizeTextRequest()
-        r.recognitionLevel = .fast  // ~10x quicker than .accurate; big OTP digits read fine
-        r.usesLanguageCorrection = false
-        return r
-    }()
+    // Fast OCR scans the whole frame to find the code; accurate OCR then reads
+    // just that region. Fast alone can misread consistently (e.g. 8 as 6).
+    private let locate = textRequest(.fast)
+    private let read = textRequest(.accurate)
     private var lastCode: String?
     private var done = false
 
@@ -29,8 +27,9 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                           userInfo: [NSLocalizedDescriptionKey: "No camera found"])
         }
         session.beginConfiguration()
-        if session.canSetSessionPreset(.hd1280x720) { session.sessionPreset = .hd1280x720 }
         session.addInput(try AVCaptureDeviceInput(device: device))
+        // Not 1080p: on the real camera, fast OCR then failed to find the code at all.
+        if session.canSetSessionPreset(.hd1280x720) { session.sessionPreset = .hd1280x720 }
         let output = AVCaptureVideoDataOutput()
         output.alwaysDiscardsLateVideoFrames = true  // always OCR the freshest frame
         // Camera-native format, so no colour conversion before Vision.
@@ -42,22 +41,21 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         session.commitConfiguration()
     }
 
-    /// Loads the OCR model on a blank frame while the camera is still starting,
+    /// Loads the OCR models on a blank frame while the camera is still starting,
     /// so the first real frame doesn't pay the model-load cost.
     func warmUp() {
         queue.async { [self] in
             var blank: CVPixelBuffer?
             CVPixelBufferCreate(nil, 64, 64, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, nil, &blank)
-            if let blank { try? handler.perform([request], on: blank) }
+            if let blank { try? handler.perform([locate, read], on: blank) }
         }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         guard !done, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        try? handler.perform([request], on: pixels, orientation: .up)
-        let code = Self.code(in: request.results ?? [])
-        // Require two consecutive frames to agree, guarding against a fast-mode misread.
+        let code = code(in: pixels)
+        // Require two consecutive frames to agree, guarding against a one-off misread.
         if let code, code == lastCode {
             done = true
             DispatchQueue.main.async { self.onCode?(code) }
@@ -65,15 +63,31 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         lastCode = code
     }
 
-    static func code(in observations: [VNRecognizedTextObservation]) -> String? {
+    /// The code in one frame, only if fast and accurate OCR agree on it.
+    func code(in pixels: CVPixelBuffer) -> String? {
+        try? handler.perform([locate], on: pixels, orientation: .up)
+        guard let found = Self.match(in: locate.results ?? [], candidates: 3) else { return nil }
+        read.regionOfInterest = found.box
+            .insetBy(dx: -found.box.width * 0.2, dy: -found.box.height * 0.5)
+            .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        try? handler.perform([read], on: pixels, orientation: .up)
+        guard let code = Self.match(in: read.results ?? [], candidates: 1)?.codes.first,
+              found.codes.contains(code) else { return nil }
+        return code
+    }
+
+    /// 6-digit codes among each observation's top candidates, and where they are.
+    static func match(in observations: [VNRecognizedTextObservation],
+                      candidates: Int) -> (codes: [String], box: CGRect)? {
         var halves: [(text: String, box: CGRect)] = []
         for observation in observations {
-            guard let text = observation.topCandidates(1).first?.string else { continue }
-            if let match = text.firstMatch(of: #/\b\d{3} ?\d{3}\b/#) {
-                return match.output.filter(\.isNumber)
+            let texts = observation.topCandidates(candidates).map(\.string)
+            let codes = texts.compactMap {
+                $0.firstMatch(of: #/\b\d{3} ?\d{3}\b/#).map { String($0.output.filter(\.isNumber)) }
             }
+            if !codes.isEmpty { return (codes, observation.boundingBox) }
             // Vision sometimes splits "709 945" into two observations.
-            if text.wholeMatch(of: #/\d{3}/#) != nil {
+            if let text = texts.first, text.wholeMatch(of: #/\d{3}/#) != nil {
                 halves.append((text, observation.boundingBox))
             }
         }
@@ -81,11 +95,18 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         for (i, left) in halves.enumerated() {
             for right in halves[(i + 1)...]
             where abs(left.box.midY - right.box.midY) < left.box.height / 2 {
-                return left.text + right.text
+                return ([left.text + right.text], left.box.union(right.box))
             }
         }
         return nil
     }
+}
+
+private func textRequest(_ level: VNRequestTextRecognitionLevel) -> VNRecognizeTextRequest {
+    let r = VNRecognizeTextRequest()
+    r.recognitionLevel = level
+    r.usesLanguageCorrection = false
+    return r
 }
 
 // MARK: - Main
