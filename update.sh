@@ -25,6 +25,11 @@ echo "==> Updating server-tooling in ${SERVER_TOOLING_DIR}"
 if [[ -d "${SERVER_TOOLING_DIR}/.git" ]]; then
   git -C "$SERVER_TOOLING_DIR" pull --ff-only
 else
+  if [[ -e "$SERVER_TOOLING_DIR" ]]; then
+    backup="${SERVER_TOOLING_DIR}.backup.$(date +%Y%m%d-%H%M%S)"
+    echo "⚠️ ${SERVER_TOOLING_DIR} exists but isn't a git clone, backing up to: $backup"
+    mv "$SERVER_TOOLING_DIR" "$backup"
+  fi
   mkdir -p "$(dirname "$SERVER_TOOLING_DIR")"
   git clone "$SERVER_TOOLING_REPO_URL" "$SERVER_TOOLING_DIR"
 fi
