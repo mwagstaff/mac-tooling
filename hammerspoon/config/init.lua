@@ -522,6 +522,75 @@ if frontmostApp and frontmostApp:bundleID() == deviceHubBundleID then
 end
 
 
+-- VPN indicator: tint the menu bar while a VPN is connected.
+-- A VPN shows up as a utun/ppp/ipsec interface with an IPv4 address.
+-- (Idle utun interfaces, e.g. iCloud Private Relay, only have IPv6
+-- link-local addresses, so they're ignored.)
+-- Tailscale is ignored too: its addresses are always in 100.64.0.0/10.
+local vpnTintColor = { red = 0.25, green = 0.41, blue = 1.0, alpha = 0.7 }
+local vpnOverlays = {}
+
+local function isTailscaleAddress(address)
+    local first, second = address:match("^(%d+)%.(%d+)%.")
+    return tonumber(first) == 100 and tonumber(second) >= 64 and tonumber(second) <= 127
+end
+
+local function isVpnActive()
+    for _, name in ipairs(hs.network.interfaces()) do
+        if name:match("^utun") or name:match("^ppp") or name:match("^ipsec") then
+            local details = hs.network.interfaceDetails(name)
+            if details and details.IPv4 then
+                for _, address in ipairs(details.IPv4.Addresses or {}) do
+                    if not isTailscaleAddress(address) then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function updateVpnIndicator()
+    for _, overlay in ipairs(vpnOverlays) do
+        overlay:delete()
+    end
+    vpnOverlays = {}
+
+    if not isVpnActive() then
+        return
+    end
+
+    for _, screen in ipairs(hs.screen.allScreens()) do
+        local full = screen:fullFrame()
+        local menuBarHeight = screen:frame().y - full.y
+        -- Height is 0 when the menu bar is set to auto-hide
+        if menuBarHeight > 0 then
+            local overlay = hs.canvas.new({ x = full.x, y = full.y, w = full.w, h = menuBarHeight })
+            overlay:appendElements({ type = "rectangle", action = "fill", fillColor = vpnTintColor })
+            overlay:level(hs.canvas.windowLevels.overlay)
+            overlay:behavior({ "canJoinAllSpaces", "stationary" })
+            overlay:show()
+            table.insert(vpnOverlays, overlay)
+        end
+    end
+end
+
+-- Interface changes can arrive in bursts, so debounce before re-checking.
+local vpnUpdateTimer = hs.timer.delayed.new(1, updateVpnIndicator)
+
+-- IMPORTANT: global references so Hammerspoon doesn't garbage-collect them
+vpnNetworkWatcher = hs.network.configuration.open()
+vpnNetworkWatcher:monitorKeys({ "State:/Network/Interface/.*/IPv4", "State:/Network/Global/IPv4" }, true)
+vpnNetworkWatcher:setCallback(function() vpnUpdateTimer:start() end)
+vpnNetworkWatcher:start()
+
+vpnScreenWatcher = hs.screen.watcher.new(function() vpnUpdateTimer:start() end)
+vpnScreenWatcher:start()
+
+updateVpnIndicator()
+
+
 local expansions = require("text-expansions")
 
 local buffer = ""
