@@ -46,6 +46,7 @@ Re-running either command is safe — existing correct symlinks are left alone, 
 - **`work-login/`** — RSA SecurID work-login and Citrix launcher; see [setup and security notes](work-login/README.md).
 - **`speak-digits/`** — offline voice-to-digits: `speak-digits.sh` listens for a spoken 6-digit number (e.g. a 2FA code) and prints it. Run `setup.sh` once to create the venv and download the ~70MB Vosk model; after that it needs no Internet.
 - **`camera-otp/`** — `camera-otp.sh` opens the built-in FaceTime camera, reads a 6-digit code (e.g. RSA SecurID) from a phone held up to it, copies it to the clipboard and prints it. Fully offline (on-device Vision OCR); compiles itself on first run. Your terminal app needs Camera permission.
+- **`camera-screenshot/`** — `camera-screenshot.sh` opens the built-in FaceTime camera, finds a phone screen held up to it (outlined in green), and once it's held still, crops and straightens it and copies it to the clipboard as a PNG. A quick, low-fidelity alternative to AirDropping a screenshot. Fully offline; compiles itself on first run. Your terminal app needs Camera permission.
 
 ## Commit and push with `gc`
 
