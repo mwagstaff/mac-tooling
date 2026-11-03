@@ -34,6 +34,26 @@ Re-running either command is safe — existing correct symlinks are left alone, 
 - Open a new terminal tab (or `exec zsh`) to pick up the config.
 - Run `bw login` to enable the Bitwarden-backed environment variables (see `shell/.zshrc`); without it, that feature just stays quietly disabled.
 
+## Update everything to the latest
+
+On any machine, this re-runs the install above (pulls this repo and `iterm2-tab-set`, upgrades the Homebrew CLI tools, re-links the shell config) and then clones or pulls [`server-tooling`](https://github.com/mwagstaff/server-tooling) into `~/dev/server-tooling`:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/mwagstaff/mac-tooling/main/update.sh)"
+```
+
+Once the shell config is installed, the `update` alias runs the same script from your local checkout.
+
+To do the same by hand:
+
+```bash
+git -C ~/dev/mac-tooling pull --ff-only
+git -C ~/dev/iterm2-tab-set pull --ff-only && (cd ~/dev/iterm2-tab-set && npm install && npm link)
+git -C ~/dev/server-tooling pull --ff-only
+brew upgrade oh-my-posh zoxide jq bitwarden-cli node
+zsh ~/dev/mac-tooling/shell/setup.sh
+```
+
 ## What's in here
 
 - **`shell/`** — zsh config (`.zshrc`, `.zshenv`), the oh-my-posh theme, and the `dev-git-prompt` background git-status scanner. See above for setup.
