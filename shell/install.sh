@@ -16,6 +16,27 @@ BREW_PACKAGES=(zoxide jq bitwarden-cli node)
 TABSET_REPO_URL="https://github.com/mwagstaff/iterm2-tab-set.git"
 TABSET_DIR="${HOME}/dev/iterm2-tab-set"
 
+# Pulls latest into an existing clone. If the checked-out branch no longer
+# exists on the remote (e.g. it was renamed from master to main), switches to
+# the remote's default branch first.
+pull_latest() {
+  local dir="$1" default_branch
+
+  git -C "$dir" fetch --prune origin
+  if ! git -C "$dir" rev-parse --verify --quiet '@{upstream}' >/dev/null; then
+    git -C "$dir" remote set-head origin --auto >/dev/null
+    default_branch="$(git -C "$dir" symbolic-ref --short refs/remotes/origin/HEAD)"
+    default_branch="${default_branch#origin/}"
+    echo "Upstream branch is gone; switching to ${default_branch}"
+    if git -C "$dir" show-ref --verify --quiet "refs/heads/${default_branch}"; then
+      git -C "$dir" switch "$default_branch"
+    else
+      git -C "$dir" switch --track -c "$default_branch" "origin/${default_branch}"
+    fi
+  fi
+  git -C "$dir" pull --ff-only
+}
+
 if ! xcode-select -p >/dev/null 2>&1; then
   echo "⚠️  Xcode Command Line Tools aren't installed. Run 'xcode-select --install' and re-run this script."
   exit 1
@@ -50,7 +71,7 @@ brew install "${BREW_PACKAGES[@]}"
 echo "==> Cloning mac-tooling into ${REPO_DIR}"
 if [[ -d "${REPO_DIR}/.git" ]]; then
   echo "Repo already present, pulling latest"
-  git -C "$REPO_DIR" pull --ff-only
+  pull_latest "$REPO_DIR"
 else
   mkdir -p "$(dirname "$REPO_DIR")"
   git clone "$REPO_URL" "$REPO_DIR"
@@ -59,7 +80,7 @@ fi
 echo "==> Cloning iterm2-tab-set into ${TABSET_DIR}"
 if [[ -d "${TABSET_DIR}/.git" ]]; then
   echo "Repo already present, pulling latest"
-  git -C "$TABSET_DIR" pull --ff-only
+  pull_latest "$TABSET_DIR"
 else
   mkdir -p "$(dirname "$TABSET_DIR")"
   git clone "$TABSET_REPO_URL" "$TABSET_DIR"
