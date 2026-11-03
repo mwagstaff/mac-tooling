@@ -591,7 +591,11 @@ vpnScreenWatcher:start()
 updateVpnIndicator()
 
 
-local expansions = require("text-expansions")
+-- text-expansions.lua is machine-local (not in version control); skip expansions if it's missing
+local hasExpansions, expansions = pcall(require, "text-expansions")
+if not hasExpansions then
+    expansions = {}
+end
 
 local buffer = ""
 local maxBufferLength = 100

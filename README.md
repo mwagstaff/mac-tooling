@@ -36,7 +36,7 @@ Re-running either command is safe — existing correct symlinks are left alone, 
 
 ## Update everything to the latest
 
-On any machine, this re-runs the install above (pulls this repo and `iterm2-tab-set`, upgrades the Homebrew CLI tools, re-links the shell config) and then clones or pulls [`server-tooling`](https://github.com/mwagstaff/server-tooling) into `~/dev/server-tooling`:
+On any machine, this re-runs the install above (pulls this repo and `iterm2-tab-set`, upgrades the Homebrew CLI tools, re-links the shell config), links `~/.hammerspoon/init.lua` to this repo and restarts Hammerspoon (if it's installed; any existing non-linked `init.lua` is backed up), and then clones or pulls [`server-tooling`](https://github.com/mwagstaff/server-tooling) into `~/dev/server-tooling`:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/mwagstaff/mac-tooling/main/update.sh)"
@@ -52,6 +52,7 @@ git -C ~/dev/iterm2-tab-set pull --ff-only && (cd ~/dev/iterm2-tab-set && npm in
 git -C ~/dev/server-tooling pull --ff-only
 brew upgrade oh-my-posh zoxide jq bitwarden-cli node
 zsh ~/dev/mac-tooling/shell/setup.sh
+bash ~/dev/mac-tooling/hammerspoon/setup.sh
 ```
 
 ## What's in here
