@@ -292,10 +292,11 @@ end
 hs.hotkey.bind({"ctrl", "cmd"}, "l", function()
     -- A fresh interactive shell loads the vault-backed environment and gives
     -- the script a terminal for masked input and clipboard token detection.
+    -- On failure, wait for a key so the error stays readable.
     local ok = hs.osascript.applescript([[
         tell application "iTerm"
             activate
-            create window with default profile command "/bin/zsh -lic '\"$HOME/dev/mac-tooling/work-login/login.sh\"'"
+            create window with default profile command "/bin/zsh -lic '\"$HOME/dev/mac-tooling/work-login/login.sh\" || read -sk \"?Work login failed. Press any key to close.\"'"
         end tell
     ]])
     if not ok then
@@ -571,11 +572,14 @@ local function updateVpnIndicator()
         return
     end
 
+    local activeSpaces = hs.spaces.activeSpaces()
     for _, screen in ipairs(hs.screen.allScreens()) do
         local full = screen:fullFrame()
         local menuBarHeight = screen:frame().y - full.y
+        local spaceID = activeSpaces[screen:getUUID()]
+        local isFullScreen = spaceID and hs.spaces.spaceType(spaceID) == "fullscreen"
         -- Height is 0 when the menu bar is set to auto-hide
-        if menuBarHeight > 0 then
+        if menuBarHeight > 0 and not isFullScreen then
             local overlay = hs.canvas.new({
                 x = full.x,
                 y = full.y + menuBarHeight - vpnStripeHeight,
@@ -602,6 +606,11 @@ vpnNetworkWatcher:start()
 
 vpnScreenWatcher = hs.screen.watcher.new(function() vpnUpdateTimer:start() end)
 vpnScreenWatcher:start()
+
+-- Hide the stripe on full-screen Spaces (e.g. Citrix Viewer in full screen).
+-- Not debounced, so the stripe doesn't linger over a full-screen app.
+vpnSpacesWatcher = hs.spaces.watcher.new(updateVpnIndicator)
+vpnSpacesWatcher:start()
 
 updateVpnIndicator()
 

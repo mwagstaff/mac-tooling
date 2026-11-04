@@ -1,5 +1,5 @@
 // Reads a 6-digit code (e.g. an RSA SecurID OTP) held up to the Mac's built-in
-// camera and copies it to the clipboard. Fully on-device: AVFoundation + Vision.
+// or USB camera and copies it to the clipboard. Fully on-device: AVFoundation + Vision.
 import AVFoundation
 import AppKit
 import Vision
@@ -18,11 +18,14 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private var done = false
 
     func configure() throws {
-        // Prefer the built-in FaceTime camera over a Continuity Camera iPhone.
-        let builtIn = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: .unspecified
-        ).devices.first
-        guard let device = builtIn ?? AVCaptureDevice.default(for: .video) else {
+        // Prefer the built-in FaceTime camera, then a USB webcam (e.g. on a Mac
+        // mini), over a Continuity Camera iPhone, which also reports as external.
+        let devices = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera, .external], mediaType: .video, position: .unspecified
+        ).devices
+        let preferred = devices.first { $0.deviceType == .builtInWideAngleCamera }
+            ?? devices.first { $0.deviceType == .external && !$0.isContinuityCamera }
+        guard let device = preferred ?? AVCaptureDevice.default(for: .video) else {
             throw NSError(domain: "camera-otp", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "No camera found"])
         }
