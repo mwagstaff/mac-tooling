@@ -522,12 +522,17 @@ if frontmostApp and frontmostApp:bundleID() == deviceHubBundleID then
 end
 
 
--- VPN indicator: tint the menu bar while a VPN is connected.
+-- VPN indicator: draw a coloured stripe along the bottom of the menu bar
+-- while a VPN is connected. (A stripe rather than a full tint, because an
+-- overlay can only sit on top of the menu bar and washes out its text.)
 -- A VPN shows up as a utun/ppp/ipsec interface with an IPv4 address.
 -- (Idle utun interfaces, e.g. iCloud Private Relay, only have IPv6
 -- link-local addresses, so they're ignored.)
--- Tailscale is ignored too: its addresses are always in 100.64.0.0/10.
-local vpnTintColor = { red = 0.25, green = 0.41, blue = 1.0, alpha = 0.7 }
+-- Tailscale gets its own colour: its addresses are always in 100.64.0.0/10.
+-- If both are connected, the VPN colour wins.
+local vpnTintColor = { red = 0.25, green = 0.41, blue = 1.0, alpha = 1.0 }
+local tailscaleTintColor = { red = 0.2, green = 0.75, blue = 0.35, alpha = 1.0 }
+local vpnStripeHeight = 4
 local vpnOverlays = {}
 
 local function isTailscaleAddress(address)
@@ -535,20 +540,24 @@ local function isTailscaleAddress(address)
     return tonumber(first) == 100 and tonumber(second) >= 64 and tonumber(second) <= 127
 end
 
-local function isVpnActive()
+-- Returns the tint colour for the current connections, or nil for none.
+local function currentTintColor()
+    local tailscaleActive = false
     for _, name in ipairs(hs.network.interfaces()) do
         if name:match("^utun") or name:match("^ppp") or name:match("^ipsec") then
             local details = hs.network.interfaceDetails(name)
             if details and details.IPv4 then
                 for _, address in ipairs(details.IPv4.Addresses or {}) do
-                    if not isTailscaleAddress(address) then
-                        return true
+                    if isTailscaleAddress(address) then
+                        tailscaleActive = true
+                    else
+                        return vpnTintColor
                     end
                 end
             end
         end
     end
-    return false
+    return tailscaleActive and tailscaleTintColor or nil
 end
 
 local function updateVpnIndicator()
@@ -557,7 +566,8 @@ local function updateVpnIndicator()
     end
     vpnOverlays = {}
 
-    if not isVpnActive() then
+    local tintColor = currentTintColor()
+    if not tintColor then
         return
     end
 
@@ -566,8 +576,13 @@ local function updateVpnIndicator()
         local menuBarHeight = screen:frame().y - full.y
         -- Height is 0 when the menu bar is set to auto-hide
         if menuBarHeight > 0 then
-            local overlay = hs.canvas.new({ x = full.x, y = full.y, w = full.w, h = menuBarHeight })
-            overlay:appendElements({ type = "rectangle", action = "fill", fillColor = vpnTintColor })
+            local overlay = hs.canvas.new({
+                x = full.x,
+                y = full.y + menuBarHeight - vpnStripeHeight,
+                w = full.w,
+                h = vpnStripeHeight,
+            })
+            overlay:appendElements({ type = "rectangle", action = "fill", fillColor = tintColor })
             overlay:level(hs.canvas.windowLevels.overlay)
             overlay:behavior({ "canJoinAllSpaces", "stationary" })
             overlay:show()
