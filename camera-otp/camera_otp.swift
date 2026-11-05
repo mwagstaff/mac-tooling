@@ -128,9 +128,19 @@ func start() {
     DispatchQueue.main.async(execute: showPreview)
 }
 
+/// Never takes the keyboard, so typing stays in the terminal. A non-activating
+/// panel would otherwise become key while the terminal still looks frontmost.
+final class PreviewPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
 func showPreview() {
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 270),
-                          styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    // Stay visible whichever app is in front, as this app never goes active.
+    let window = PreviewPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 270),
+                              styleMask: [.titled, .closable, .nonactivatingPanel],
+                              backing: .buffered, defer: false)
+    window.hidesOnDeactivate = false
     window.title = "Hold your phone up to the camera"
     window.level = .floating
     let view = NSView()
@@ -140,7 +150,6 @@ func showPreview() {
     view.layer = preview
     window.contentView = view
     window.center()
-    // Show without taking focus, so typing still goes to the terminal.
     window.orderFrontRegardless()
     NotificationCenter.default.addObserver(
         forName: NSWindow.willCloseNotification, object: window, queue: .main
@@ -155,7 +164,9 @@ reader.onCode = { code in
 }
 
 let app = NSApplication.shared
-app.setActivationPolicy(.accessory)
+// Not .accessory: launched from a terminal, that made this app frontmost,
+// taking typing away from the token prompt.
+app.setActivationPolicy(.prohibited)
 
 switch AVCaptureDevice.authorizationStatus(for: .video) {
 case .authorized:
