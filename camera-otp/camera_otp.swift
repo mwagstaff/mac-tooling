@@ -4,6 +4,19 @@ import AVFoundation
 import AppKit
 import Vision
 
+/// The RSA app shows 000000 while it loads, so give that up to 5 seconds to
+/// change before treating it as a genuine code.
+struct PlaceholderGate {
+    private var firstSeen: Date?
+
+    mutating func accepts(_ code: String, at now: Date = Date()) -> Bool {
+        guard code == "000000" else { return true }
+        let firstSeen = firstSeen ?? now
+        self.firstSeen = firstSeen
+        return now.timeIntervalSince(firstSeen) >= 5
+    }
+}
+
 final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     let session = AVCaptureSession()
     var onCode: ((String) -> Void)?
@@ -15,6 +28,7 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let locate = textRequest(.fast)
     private let read = textRequest(.accurate)
     private var lastCode: String?
+    private var placeholderGate = PlaceholderGate()
     private var done = false
 
     func configure() throws {
@@ -59,7 +73,7 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         guard !done, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let code = code(in: pixels)
         // Require two consecutive frames to agree, guarding against a one-off misread.
-        if let code, code == lastCode {
+        if let code, code == lastCode, placeholderGate.accepts(code) {
             done = true
             DispatchQueue.main.async { self.onCode?(code) }
         }

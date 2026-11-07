@@ -55,7 +55,9 @@ the script detects the clipboard change and automatically continues if the
 new text is exactly six ASCII digits. No paste or Enter is needed in that case.
 Or **hold the phone up to the Mac's camera**: a small preview window opens
 when the prompt does, and the token is entered and submitted automatically as
-soon as it is read, with no key press. This uses
+soon as it is read, with no key press. The RSA app shows `000000` while it
+loads, so that reading is held for up to 5 seconds in case it changes, then
+accepted as genuine. This uses
 [`camera-otp`](../camera-otp/camera-otp.sh) (on-device OCR, no Internet), which
 compiles itself on the first run and needs your terminal app to have Camera
 permission. The window does not take keyboard focus, so typing still works, and
