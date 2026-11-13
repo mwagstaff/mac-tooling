@@ -4,6 +4,45 @@ import AVFoundation
 import AppKit
 import Vision
 
+// Account mode is opt-in; the RSA reader retains its existing behaviour.
+struct AccountText {
+    let text: String
+    let box: CGRect
+    var confidence: Float = 1
+}
+
+enum AccountCode {
+    static func normalized(_ text: String) -> String {
+        text.lowercased().filter { !$0.isWhitespace }
+    }
+
+    static func digits(_ text: String) -> String? {
+        let value = text.filter { !$0.isWhitespace }
+        return value.count == 6 && value.utf8.allSatisfy { (48...57).contains($0) } ? value : nil
+    }
+
+    static func match(_ lines: [AccountText], account: String) -> String? {
+        let labels = lines.filter { normalized($0.text) == normalized(account) }
+        guard labels.count == 1, let label = labels.first, label.confidence >= 0.8 else { return nil }
+        // Vision coordinates run upwards. Only use the code immediately below
+        // this label, with a shared horizontal span and no intervening text.
+        let below = lines.filter {
+            $0.box.midY < label.box.minY &&
+            label.box.minY - $0.box.maxY < label.box.height * 5 &&
+            $0.box.maxX > label.box.minX && $0.box.minX < label.box.maxX
+        }
+        guard let nearest = below.max(by: { $0.box.midY < $1.box.midY }) else { return nil }
+        let row = below.filter { abs($0.box.midY - nearest.box.midY) < min($0.box.height, nearest.box.height) * 0.4 }
+            .sorted { $0.box.minX < $1.box.minX }
+        guard row.allSatisfy({ $0.confidence >= 0.8 }) else { return nil }
+        if row.count == 1 { return digits(row[0].text) }
+        guard row.count == 2,
+              row.allSatisfy({ $0.text.count == 3 && $0.text.utf8.allSatisfy { (48...57).contains($0) } }),
+              row[1].box.minX - row[0].box.maxX < max(row[0].box.width, row[1].box.width) else { return nil }
+        return digits(row.map(\.text).joined())
+    }
+}
+
 /// The RSA app shows 000000 while it loads, so give that up to 5 seconds to
 /// change before treating it as a genuine code.
 struct PlaceholderGate {
@@ -20,6 +59,7 @@ struct PlaceholderGate {
 final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     let session = AVCaptureSession()
     var onCode: ((String) -> Void)?
+    var onGuidance: ((String, Bool) -> Void)?
 
     private let queue = DispatchQueue(label: "camera-otp.frames", qos: .userInteractive)
     private let handler = VNSequenceRequestHandler()
@@ -30,6 +70,8 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private var lastCode: String?
     private var placeholderGate = PlaceholderGate()
     private var done = false
+    var account: String?
+    private var stableSince: Date?
 
     func configure() throws {
         // Prefer the built-in FaceTime camera, then a USB webcam (e.g. on a Mac
@@ -72,6 +114,29 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                        from connection: AVCaptureConnection) {
         guard !done, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let code = code(in: pixels)
+        var message = code == nil ? "Centre the text in the guide and hold still" : "Code detected — hold still"
+        if account != nil && code != nil && Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 30) >= 25 {
+            message = "Waiting for the next code — hold still"
+        } else if account == nil && code == "000000" {
+            message = "Waiting for the RSA token to finish loading"
+        }
+        DispatchQueue.main.async { self.onGuidance?(message, code != nil) }
+        if account != nil {
+            // Leave time to fill and submit near the usual 30-second TOTP rollover.
+            // This is a local-clock guard, not proof of the phone's remaining time.
+            guard Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 30) < 25 else {
+                lastCode = nil
+                stableSince = nil
+                return
+            }
+            if code != lastCode { stableSince = Date() }
+            defer { lastCode = code }
+            guard let code, code == lastCode, let since = stableSince,
+                  Date().timeIntervalSince(since) >= 0.6 else { return }
+            done = true
+            DispatchQueue.main.async { self.onCode?(code) }
+            return
+        }
         // Require two consecutive frames to agree, guarding against a one-off misread.
         if let code, code == lastCode, placeholderGate.accepts(code) {
             done = true
@@ -82,6 +147,15 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     /// The code in one frame, only if fast and accurate OCR agree on it.
     func code(in pixels: CVPixelBuffer) -> String? {
+        if let account {
+            read.regionOfInterest = CGRect(x: 0, y: 0, width: 1, height: 1)
+            do { try handler.perform([read], on: pixels, orientation: .up) } catch { return nil }
+            let lines = (read.results ?? []).compactMap { observation -> AccountText? in
+                guard let candidate = observation.topCandidates(1).first else { return nil }
+                return AccountText(text: candidate.string, box: observation.boundingBox, confidence: candidate.confidence)
+            }
+            return AccountCode.match(lines, account: account)
+        }
         try? handler.perform([locate], on: pixels, orientation: .up)
         guard let found = Self.match(in: locate.results ?? [], candidates: 3) else { return nil }
         read.regionOfInterest = found.box
@@ -130,6 +204,13 @@ private func textRequest(_ level: VNRequestTextRecognitionLevel) -> VNRecognizeT
 
 let reader = CodeReader()
 
+let arguments = Array(CommandLine.arguments.dropFirst())
+if arguments.count == 2 && arguments[0] == "--account" && !arguments[1].isEmpty {
+    reader.account = arguments[1]
+} else if !arguments.isEmpty {
+    fail("Usage: camera-otp [--account 'Service: account']")
+}
+
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
     exit(1)
@@ -149,19 +230,104 @@ final class PreviewPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+final class AimingGuide: NSView {
+    var accountMode = false
+    var detected = false { didSet { if oldValue != detected { needsDisplay = true } } }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let target = NSRect(x: 80, y: accountMode ? 96 : 118,
+                            width: bounds.width - 160, height: accountMode ? 168 : 124)
+        let mask = NSBezierPath(rect: bounds)
+        mask.append(NSBezierPath(roundedRect: target, xRadius: 14, yRadius: 14))
+        mask.windingRule = .evenOdd
+        NSColor.black.withAlphaComponent(0.55).setFill()
+        mask.fill()
+
+        let border = NSBezierPath(roundedRect: target, xRadius: 14, yRadius: 14)
+        NSColor.black.withAlphaComponent(0.7).setStroke()
+        border.lineWidth = 6
+        border.stroke()
+        (detected ? NSColor.systemGreen : NSColor.white).setStroke()
+        border.lineWidth = 3
+        border.stroke()
+
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        let title = accountMode ? "Account name + six-digit code" : "Six-digit RSA code"
+        (title as NSString).draw(in: NSRect(x: 20, y: bounds.height - 52, width: bounds.width - 40, height: 26),
+                                withAttributes: [.font: NSFont.systemFont(ofSize: 19, weight: .semibold),
+                                                 .foregroundColor: NSColor.white, .paragraphStyle: style])
+        let hint = "Aim the text here — you don’t need the whole phone in view"
+        (hint as NSString).draw(in: NSRect(x: 20, y: 28, width: bounds.width - 40, height: 22),
+                               withAttributes: [.font: NSFont.systemFont(ofSize: 14),
+                                                .foregroundColor: NSColor.white, .paragraphStyle: style])
+    }
+}
+
+final class MirrorControl: NSObject {
+    let preview: AVCaptureVideoPreviewLayer
+    let preferences = UserDefaults(suiteName: "dev.mac-tooling.camera-otp")!
+
+    init(preview: AVCaptureVideoPreviewLayer) { self.preview = preview }
+
+    @objc func change(_ sender: NSButton) {
+        guard let connection = preview.connection, connection.isVideoMirroringSupported else { return }
+        connection.automaticallyAdjustsVideoMirroring = false
+        connection.isVideoMirrored = sender.state == .on
+        preferences.set(sender.state == .on, forKey: "mirrorPreview")
+    }
+}
+
+// NSControl targets are weak; retain the preview controller for the capture's lifetime.
+var mirrorControl: MirrorControl?
+
 func showPreview() {
     // Stay visible whichever app is in front, as this app never goes active.
-    let window = PreviewPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 270),
+    let window = PreviewPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 440),
                               styleMask: [.titled, .closable, .nonactivatingPanel],
                               backing: .buffered, defer: false)
     window.hidesOnDeactivate = false
-    window.title = "Hold your phone up to the camera"
+    window.title = reader.account.map { "Looking for \($0)" } ?? "Hold your phone up to the camera"
     window.level = .floating
-    let view = NSView()
-    view.wantsLayer = true
+    let view = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 440))
+    let cameraView = NSView(frame: NSRect(x: 0, y: 80, width: 640, height: 360))
+    cameraView.wantsLayer = true
     let preview = AVCaptureVideoPreviewLayer(session: reader.session)
-    preview.videoGravity = .resizeAspectFill
-    view.layer = preview
+    preview.videoGravity = .resizeAspect
+    cameraView.layer = preview
+    view.addSubview(cameraView)
+    let guide = AimingGuide(frame: cameraView.bounds)
+    guide.accountMode = reader.account != nil
+    guide.setAccessibilityElement(true)
+    guide.setAccessibilityLabel(guide.accountMode ? "Camera guide: align the account name and code" : "Camera guide: align the RSA code")
+    cameraView.addSubview(guide)
+
+    let status = NSTextField(labelWithString: "Centre the text in the guide and hold still")
+    status.frame = NSRect(x: 20, y: 45, width: 600, height: 24)
+    status.font = .systemFont(ofSize: 16, weight: .medium)
+    status.alignment = .center
+    view.addSubview(status)
+    reader.onGuidance = { message, detected in
+        if status.stringValue != message { status.stringValue = message }
+        guide.detected = detected
+    }
+
+    let control = MirrorControl(preview: preview)
+    mirrorControl = control
+    let mirror = NSButton(checkboxWithTitle: "Mirror preview", target: control, action: #selector(MirrorControl.change(_:)))
+    mirror.frame = NSRect(x: 20, y: 12, width: 150, height: 22)
+    mirror.state = control.preferences.bool(forKey: "mirrorPreview") ? .on : .off
+    mirror.isEnabled = preview.connection?.isVideoMirroringSupported == true
+    mirror.toolTip = "Flip only the preview if aiming feels backwards. Your choice is remembered for both logins."
+    control.change(mirror)
+    view.addSubview(mirror)
+    let help = NSTextField(labelWithString: "Aiming feels backwards? Try Mirror preview.")
+    help.frame = NSRect(x: 185, y: 13, width: 435, height: 20)
+    help.textColor = .secondaryLabelColor
+    help.alignment = .right
+    view.addSubview(help)
     window.contentView = view
     window.center()
     window.orderFrontRegardless()
@@ -171,13 +337,20 @@ func showPreview() {
 }
 
 reader.onCode = { code in
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(code, forType: .string)
+    if reader.account == nil {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(code, forType: .string)
+    }
     print(code)
     exit(0)
 }
 
 let app = NSApplication.shared
+if reader.account != nil {
+    Timer.scheduledTimer(withTimeInterval: 45, repeats: false) { _ in
+        fail("No unambiguous account code found. Search for the account on your phone and try again.")
+    }
+}
 // Not .accessory: launched from a terminal, that made this app frontmost,
 // taking typing away from the token prompt.
 app.setActivationPolicy(.prohibited)

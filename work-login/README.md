@@ -53,7 +53,7 @@ alone is not a secret) so you can check them, and Backspace works normally. Pres
 Alternatively, **copy a new token from the RSA app while the prompt is open**:
 the script detects the clipboard change and automatically continues if the
 new text is exactly six ASCII digits. No paste or Enter is needed in that case.
-Or **hold the phone up to the Mac's camera**: a small preview window opens
+Or **hold the phone up to the Mac's camera**: a guided preview window opens
 when the prompt does, and the token is entered and submitted automatically as
 soon as it is read, with no key press. The RSA app shows `000000` while it
 loads, so that reading is held for up to 5 seconds in case it changes, then

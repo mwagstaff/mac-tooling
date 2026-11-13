@@ -221,10 +221,9 @@ BindAppShortcut("r", "Reminders")
 BindAppShortcut("s", "Signal")
 BindAppShortcut("t", "Bitwarden")
 BindAppShortcut("u", "Cursor")
-BindAppShortcut("v", "Visual Studio Code")
 BindAppShortcut("w", "WhatsApp")
 BindAppShortcut("x", "Xcode")
-BindAppShortcut("z", "zoom.us")
+BindAppShortcut("z", "Zed")
 
 -- App shortcuts: Ctrl-Option
 
@@ -289,6 +288,8 @@ for passwordIndex = 1, 9, 1 do
 end
 
 -- Login to work
+local authenticatorLogin = dofile(os.getenv("HOME") .. "/dev/mac-tooling/hammerspoon/config/authenticator-login.lua")
+
 hs.hotkey.bind({"ctrl", "cmd"}, "l", function()
     -- A fresh interactive shell loads the vault-backed environment and gives
     -- the script a terminal for masked input and clipboard token detection.

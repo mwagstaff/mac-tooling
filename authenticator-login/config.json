@@ -1,0 +1,8 @@
+{
+  "dash.cloudflare.com": {
+    "origin": "https://dash.cloudflare.com",
+    "path": "/two-factor",
+    "email": "mike.wagstaff@gmail.com",
+    "account": "Cloudflare: mike.wagstaff@gmail.com"
+  }
+}
