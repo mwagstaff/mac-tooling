@@ -2,6 +2,7 @@
 // or USB camera and copies it to the clipboard. Fully on-device: AVFoundation + Vision.
 import AVFoundation
 import AppKit
+import CoreImage
 import Vision
 
 // Account mode is opt-in; the RSA reader retains its existing behaviour.
@@ -59,18 +60,32 @@ struct PlaceholderGate {
 final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     let session = AVCaptureSession()
     var onCode: ((String) -> Void)?
-    var onGuidance: ((String, Bool) -> Void)?
+    var onGuidance: ((String, Bool, PhoneOutline?, CGSize) -> Void)?
 
-    private let queue = DispatchQueue(label: "camera-otp.frames", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "camera-otp.frames", qos: .userInitiated)
+    private var analysisSchedule = AnalysisSchedule()
     private let handler = VNSequenceRequestHandler()
     // Fast OCR scans the whole frame to find the code; accurate OCR then reads
     // just that region. Fast alone can misread consistently (e.g. 8 as 6).
     private let locate = textRequest(.fast)
     private let read = textRequest(.accurate)
+    private let rectangles: VNDetectRectanglesRequest = {
+        let request = VNDetectRectanglesRequest()
+        request.minimumAspectRatio = 0.3
+        request.maximumAspectRatio = 0.75
+        request.minimumSize = 0.12
+        request.minimumConfidence = 0.7
+        request.maximumObservations = 8
+        return request
+    }()
+    private let faces = VNDetectFaceRectanglesRequest()
+    private var phoneTracker = PhoneTracker()
+    private var textBox: CGRect?
     private var lastCode: String?
     private var placeholderGate = PlaceholderGate()
     private var done = false
     var account: String?
+    var previewOnly = false
     private var stableSince: Date?
 
     func configure() throws {
@@ -97,6 +112,11 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         ]
         output.setSampleBufferDelegate(self, queue: queue)
         session.addOutput(output)
+        // Physical movement hints assume the raw camera image, never mirrored OCR.
+        if let connection = output.connection(with: .video), connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
+        }
         session.commitConfiguration()
     }
 
@@ -113,14 +133,21 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         guard !done, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        guard analysisSchedule.begin(at: ProcessInfo.processInfo.systemUptime) else { return }
+        defer { analysisSchedule.finish(at: ProcessInfo.processInfo.systemUptime) }
         let code = code(in: pixels)
-        var message = code == nil ? "Centre the text in the guide and hold still" : "Code detected — hold still"
-        if account != nil && code != nil && Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 30) >= 25 {
+        let size = CGSize(width: CVPixelBufferGetWidth(pixels), height: CVPixelBufferGetHeight(pixels))
+        let phone = phone(in: pixels)
+        var message = code == nil ? Aiming.direction(for: textBox ?? phone?.box) : "Code detected — hold still"
+        if previewOnly && code != nil {
+            message = "Code detected — test only; nothing copied or submitted"
+        } else if account != nil && code != nil && Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 30) >= 25 {
             message = "Waiting for the next code — hold still"
         } else if account == nil && code == "000000" {
             message = "Waiting for the RSA token to finish loading"
         }
-        DispatchQueue.main.async { self.onGuidance?(message, code != nil) }
+        DispatchQueue.main.async { self.onGuidance?(message, code != nil, phone, size) }
+        guard !previewOnly else { return }
         if account != nil {
             // Leave time to fill and submit near the usual 30-second TOTP rollover.
             // This is a local-clock guard, not proof of the phone's remaining time.
@@ -145,8 +172,25 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         lastCode = code
     }
 
+    private func phone(in pixels: CVPixelBuffer) -> PhoneOutline? {
+        // Full resolution is useful for OCR, but unnecessary for outlines/faces.
+        let scale = min(1, 640 / CGFloat(CVPixelBufferGetWidth(pixels)))
+        let image = CIImage(cvPixelBuffer: pixels).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        do { try VNImageRequestHandler(ciImage: image, orientation: .up).perform([rectangles, faces]) }
+        catch {
+            phoneTracker = PhoneTracker()
+            return nil
+        }
+        let outlines = (rectangles.results ?? []).map {
+            PhoneOutline(points: [$0.topLeft, $0.topRight, $0.bottomRight, $0.bottomLeft])
+        }
+        return phoneTracker.update(outlines, faces: (faces.results ?? []).map(\.boundingBox),
+                                   text: textBox, now: ProcessInfo.processInfo.systemUptime)
+    }
+
     /// The code in one frame, only if fast and accurate OCR agree on it.
     func code(in pixels: CVPixelBuffer) -> String? {
+        textBox = nil
         if let account {
             read.regionOfInterest = CGRect(x: 0, y: 0, width: 1, height: 1)
             do { try handler.perform([read], on: pixels, orientation: .up) } catch { return nil }
@@ -154,10 +198,13 @@ final class CodeReader: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
                 guard let candidate = observation.topCandidates(1).first else { return nil }
                 return AccountText(text: candidate.string, box: observation.boundingBox, confidence: candidate.confidence)
             }
+            let labels = lines.filter { AccountCode.normalized($0.text) == AccountCode.normalized(account) }
+            if labels.count == 1 { textBox = labels[0].box }
             return AccountCode.match(lines, account: account)
         }
         try? handler.perform([locate], on: pixels, orientation: .up)
         guard let found = Self.match(in: locate.results ?? [], candidates: 3) else { return nil }
+        textBox = found.box
         read.regionOfInterest = found.box
             .insetBy(dx: -found.box.width * 0.2, dy: -found.box.height * 0.5)
             .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
@@ -204,11 +251,15 @@ private func textRequest(_ level: VNRequestTextRecognitionLevel) -> VNRecognizeT
 
 let reader = CodeReader()
 
-let arguments = Array(CommandLine.arguments.dropFirst())
+var arguments = Array(CommandLine.arguments.dropFirst())
+if arguments.first == "--preview" {
+    reader.previewOnly = true
+    arguments.removeFirst()
+}
 if arguments.count == 2 && arguments[0] == "--account" && !arguments[1].isEmpty {
     reader.account = arguments[1]
 } else if !arguments.isEmpty {
-    fail("Usage: camera-otp [--account 'Service: account']")
+    fail("Usage: camera-otp [--preview] [--account 'Service: account']")
 }
 
 func fail(_ message: String) -> Never {
@@ -230,21 +281,165 @@ final class PreviewPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+struct PhoneOutline {
+    let points: [CGPoint]
+    var box: CGRect {
+        let xs = points.map(\.x), ys = points.map(\.y)
+        return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+    }
+}
+
+// Limit expensive Vision work while AVFoundation keeps the preview smooth.
+struct AnalysisSchedule {
+    private var next: TimeInterval = 0
+    mutating func begin(at now: TimeInterval) -> Bool {
+        guard now >= next else { return false }
+        next = now + 0.25
+        return true
+    }
+    mutating func finish(at now: TimeInterval) {
+        // Leave breathing room even when analysis itself takes longer than 250ms.
+        next = max(next, now + 0.1)
+    }
+}
+
+// Acquire a stable non-face outline even before its text is readable. Once acquired,
+// follow that outline rather than switching to whichever rectangle is central.
+struct PhoneTracker {
+    private var locked: PhoneOutline?
+    private var pending: PhoneOutline?
+    private var confirmations = 0
+    private var lastSeen: TimeInterval = 0
+    private var pendingSeen: TimeInterval = 0
+
+    private static func area(_ box: CGRect) -> CGFloat {
+        box.isNull ? 0 : box.width * box.height
+    }
+
+    private static func overlap(_ a: CGRect, _ b: CGRect) -> CGFloat {
+        let intersection = area(a.intersection(b))
+        return intersection / max(area(a) + area(b) - intersection, 0.000001)
+    }
+
+    private static func overlapsFace(_ box: CGRect, faces: [CGRect]) -> Bool {
+        faces.contains { face in
+            area(box.intersection(face)) / max(min(area(box), area(face)), 0.000001) > 0.2
+        }
+    }
+
+    mutating func update(_ outlines: [PhoneOutline], faces: [CGRect], text: CGRect?,
+                         now: TimeInterval) -> PhoneOutline? {
+        // Never retain a stale opening over a face, even during the grace period.
+        if let locked, Self.overlapsFace(locked.box, faces: faces) {
+            self.locked = nil
+        }
+        let candidates = outlines.filter {
+            $0.box.height > $0.box.width && !Self.overlapsFace($0.box, faces: faces)
+        }
+        if let locked {
+            let matches = candidates.filter { Self.overlap($0.box, locked.box) > 0.5 }
+            if let next = matches.max(by: { Self.overlap($0.box, locked.box) < Self.overlap($1.box, locked.box) }) {
+                // Reduce corner jitter without letting the mask lag far behind a hand.
+                let smoothed = PhoneOutline(points: zip(locked.points, next.points).map {
+                    CGPoint(x: $0.x * 0.25 + $1.x * 0.75, y: $0.y * 0.25 + $1.y * 0.75)
+                })
+                self.locked = smoothed
+                lastSeen = now
+                return smoothed
+            }
+            if now - lastSeen <= 0.65 { return locked }
+            self.locked = nil
+        }
+        // Text helps choose between outlines, but must not gate visual feedback.
+        let containingText = text.map { text in candidates.filter { $0.box.contains(text) } } ?? []
+        let choices = containingText.isEmpty ? candidates : containingText
+        guard let next = choices.max(by: { Self.area($0.box) < Self.area($1.box) }) else {
+            pending = nil
+            confirmations = 0
+            return nil
+        }
+        if let pending, now - pendingSeen < 0.75, Self.overlap(pending.box, next.box) > 0.5 {
+            confirmations += 1
+        } else {
+            confirmations = 1
+        }
+        pending = next
+        pendingSeen = now
+        guard confirmations >= 3 else { return nil }
+        locked = next
+        pending = nil
+        confirmations = 0
+        lastSeen = now
+        return next
+    }
+}
+
+enum Aiming {
+    // Raw camera x is opposite the user's physical left/right when facing the
+    // camera. These arrows describe hand movement, not movement of the image.
+    static func direction(for box: CGRect?) -> String {
+        guard let box else { return "Show the whole phone screen with the code visible" }
+        var hints: [String] = []
+        if box.midX < 0.42 { hints.append("← towards your left") }
+        if box.midX > 0.58 { hints.append("→ towards your right") }
+        if box.midY < 0.40 { hints.append("↑ raise the phone") }
+        if box.midY > 0.60 { hints.append("↓ lower the phone") }
+        return hints.isEmpty ? "Hold still — keep the screen facing the camera" : hints.joined(separator: "   ")
+    }
+
+    static func previewPoint(_ point: CGPoint, size: CGSize, bounds: CGRect, mirrored: Bool) -> CGPoint {
+        let scale = min(bounds.width / size.width, bounds.height / size.height)
+        let width = size.width * scale, height = size.height * scale
+        return CGPoint(x: bounds.midX + ((mirrored ? 1 - point.x : point.x) - 0.5) * width,
+                       y: bounds.midY + (point.y - 0.5) * height)
+    }
+}
+
 final class AimingGuide: NSView {
     var accountMode = false
+    let backgroundBlur = NSVisualEffectView()
+    private let blurMask = CAShapeLayer()
+    var phone: PhoneOutline? { didSet { updateBlurMask(); needsDisplay = true } }
+    var imageSize = CGSize(width: 1280, height: 720)
+    var mirrored = false { didSet { updateBlurMask(); needsDisplay = true } }
     var detected = false { didSet { if oldValue != detected { needsDisplay = true } } }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        backgroundBlur.frame = bounds
+        backgroundBlur.blendingMode = .withinWindow
+        backgroundBlur.material = .hudWindow
+        backgroundBlur.state = .active
+        backgroundBlur.wantsLayer = true
+        blurMask.fillRule = .evenOdd
+        backgroundBlur.layer?.mask = blurMask
+        updateBlurMask()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func updateBlurMask() {
+        let path = CGMutablePath()
+        path.addRect(bounds)
+        if let phone {
+            let points = phone.points.map {
+                Aiming.previewPoint($0, size: imageSize, bounds: bounds, mirrored: mirrored)
+            }
+            path.addLines(between: points)
+            path.closeSubpath()
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        blurMask.frame = bounds
+        blurMask.path = path
+        CATransaction.commit()
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
         let target = NSRect(x: 80, y: accountMode ? 96 : 118,
                             width: bounds.width - 160, height: accountMode ? 168 : 124)
-        let mask = NSBezierPath(rect: bounds)
-        mask.append(NSBezierPath(roundedRect: target, xRadius: 14, yRadius: 14))
-        mask.windingRule = .evenOdd
-        NSColor.black.withAlphaComponent(0.55).setFill()
-        mask.fill()
-
         let border = NSBezierPath(roundedRect: target, xRadius: 14, yRadius: 14)
         NSColor.black.withAlphaComponent(0.7).setStroke()
         border.lineWidth = 6
@@ -253,13 +448,19 @@ final class AimingGuide: NSView {
         border.lineWidth = 3
         border.stroke()
 
+        // Keep instructions readable even when the phone overlaps the text.
+        NSColor.black.withAlphaComponent(0.8).setFill()
+        NSBezierPath(roundedRect: NSRect(x: 16, y: bounds.height - 56, width: bounds.width - 32, height: 34),
+                     xRadius: 8, yRadius: 8).fill()
+        NSBezierPath(roundedRect: NSRect(x: 16, y: 24, width: bounds.width - 32, height: 30),
+                     xRadius: 8, yRadius: 8).fill()
         let style = NSMutableParagraphStyle()
         style.alignment = .center
         let title = accountMode ? "Account name + six-digit code" : "Six-digit RSA code"
         (title as NSString).draw(in: NSRect(x: 20, y: bounds.height - 52, width: bounds.width - 40, height: 26),
                                 withAttributes: [.font: NSFont.systemFont(ofSize: 19, weight: .semibold),
                                                  .foregroundColor: NSColor.white, .paragraphStyle: style])
-        let hint = "Aim the text here — you don’t need the whole phone in view"
+        let hint = "Arrows mean your physical movement, even with Mirror preview"
         (hint as NSString).draw(in: NSRect(x: 20, y: 28, width: bounds.width - 40, height: 22),
                                withAttributes: [.font: NSFont.systemFont(ofSize: 14),
                                                 .foregroundColor: NSColor.white, .paragraphStyle: style])
@@ -268,14 +469,19 @@ final class AimingGuide: NSView {
 
 final class MirrorControl: NSObject {
     let preview: AVCaptureVideoPreviewLayer
+    let guide: AimingGuide
     let preferences = UserDefaults(suiteName: "dev.mac-tooling.camera-otp")!
 
-    init(preview: AVCaptureVideoPreviewLayer) { self.preview = preview }
+    init(preview: AVCaptureVideoPreviewLayer, guide: AimingGuide) {
+        self.preview = preview
+        self.guide = guide
+    }
 
     @objc func change(_ sender: NSButton) {
         guard let connection = preview.connection, connection.isVideoMirroringSupported else { return }
         connection.automaticallyAdjustsVideoMirroring = false
         connection.isVideoMirrored = sender.state == .on
+        guide.mirrored = connection.isVideoMirrored
         preferences.set(sender.state == .on, forKey: "mirrorPreview")
     }
 }
@@ -290,6 +496,7 @@ func showPreview() {
                               backing: .buffered, defer: false)
     window.hidesOnDeactivate = false
     window.title = reader.account.map { "Looking for \($0)" } ?? "Hold your phone up to the camera"
+    if reader.previewOnly { window.title = "Camera test — no login or clipboard changes" }
     window.level = .floating
     let view = NSView(frame: NSRect(x: 0, y: 0, width: 640, height: 440))
     let cameraView = NSView(frame: NSRect(x: 0, y: 80, width: 640, height: 360))
@@ -302,19 +509,24 @@ func showPreview() {
     guide.accountMode = reader.account != nil
     guide.setAccessibilityElement(true)
     guide.setAccessibilityLabel(guide.accountMode ? "Camera guide: align the account name and code" : "Camera guide: align the RSA code")
+    // Sibling overlay blurs the live preview; guide text stays sharp above it.
+    cameraView.addSubview(guide.backgroundBlur)
     cameraView.addSubview(guide)
 
-    let status = NSTextField(labelWithString: "Centre the text in the guide and hold still")
+    let status = NSTextField(labelWithString: "Show the whole phone screen with the code visible")
     status.frame = NSRect(x: 20, y: 45, width: 600, height: 24)
     status.font = .systemFont(ofSize: 16, weight: .medium)
     status.alignment = .center
     view.addSubview(status)
-    reader.onGuidance = { message, detected in
+    reader.onGuidance = { message, detected, phone, size in
         if status.stringValue != message { status.stringValue = message }
         guide.detected = detected
+        guide.imageSize = size
+        guide.phone = phone
+        guide.setAccessibilityValue(message)
     }
 
-    let control = MirrorControl(preview: preview)
+    let control = MirrorControl(preview: preview, guide: guide)
     mirrorControl = control
     let mirror = NSButton(checkboxWithTitle: "Mirror preview", target: control, action: #selector(MirrorControl.change(_:)))
     mirror.frame = NSRect(x: 20, y: 12, width: 150, height: 22)
@@ -323,7 +535,7 @@ func showPreview() {
     mirror.toolTip = "Flip only the preview if aiming feels backwards. Your choice is remembered for both logins."
     control.change(mirror)
     view.addSubview(mirror)
-    let help = NSTextField(labelWithString: "Aiming feels backwards? Try Mirror preview.")
+    let help = NSTextField(labelWithString: "Hold the phone steady to bring it into focus.")
     help.frame = NSRect(x: 185, y: 13, width: 435, height: 20)
     help.textColor = .secondaryLabelColor
     help.alignment = .right
@@ -333,10 +545,11 @@ func showPreview() {
     window.orderFrontRegardless()
     NotificationCenter.default.addObserver(
         forName: NSWindow.willCloseNotification, object: window, queue: .main
-    ) { _ in exit(1) }
+    ) { _ in exit(reader.previewOnly ? 0 : 1) }
 }
 
 reader.onCode = { code in
+    guard !reader.previewOnly else { return }
     if reader.account == nil {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(code, forType: .string)
@@ -346,7 +559,7 @@ reader.onCode = { code in
 }
 
 let app = NSApplication.shared
-if reader.account != nil {
+if reader.account != nil && !reader.previewOnly {
     Timer.scheduledTimer(withTimeInterval: 45, repeats: false) { _ in
         fail("No unambiguous account code found. Search for the account on your phone and try again.")
     }

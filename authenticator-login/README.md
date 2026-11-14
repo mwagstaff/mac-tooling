@@ -13,6 +13,19 @@ preview starts unmirrored. Use **Mirror preview** if the opposite orientation
 feels easier; the choice is remembered for both Authenticator and RSA capture.
 Only the preview is flipped, not the image used for text recognition.
 
+The preview blurs the background while keeping a stable detected phone outline
+clear. Before detection, the blurred live view still gives positioning feedback;
+readable account/code text is helpful but no longer required to reveal the phone.
+Face detections are excluded; keep the phone beside your face if they overlap.
+The mask follows the acquired phone, smooths small movements, and tolerates
+brief detection misses rather than jumping between rectangles. An obscured or
+heavily tilted screen may not be found. This display effect does not crop OCR.
+Analysis runs at most four times per second, with a pause after expensive frames;
+outline/face detection uses a smaller image while OCR retains full resolution.
+Positioning arrows describe **physical movement**: “towards your left/right”
+means move your hand that way, regardless of the **Mirror preview** setting.
+The hints follow the account/code location when available, otherwise the screen.
+
 The shortcut maps the exact HTTPS website to the account in `config.json`,
 matches the full account label to the code beneath it, fills the browser field,
 and clicks **Verify once**. It does not retry rejected codes. The success alert
@@ -61,3 +74,17 @@ hs -c 'dofile(os.getenv("HOME") .. "/dev/mac-tooling/authenticator-login/control
 These checks cover account/row selection and browser submission guards. Actual
 phone-camera recognition, macOS permissions, and a successful Cloudflare login
 must also be checked on the user's devices.
+
+## Test the camera without logging in
+
+Press **Ctrl–Cmd–Shift–C** to open the standalone camera test from any app.
+It shows the same masking, aiming arrows and six-digit recognition feedback,
+but never copies or outputs the code, fills a browser field, or submits a login.
+The preview stays open after detection. Press the shortcut again, press
+**Escape**, or close the window to stop; it also closes after two minutes.
+
+For the account-specific guide from a terminal, use:
+
+```sh
+~/dev/mac-tooling/camera-otp/camera-otp.sh --preview --account 'Service: account'
+```

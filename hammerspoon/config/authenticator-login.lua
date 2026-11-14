@@ -114,7 +114,27 @@ function M.start()
     end)
 end
 
-escape = hs.hotkey.new({}, "escape", function() finish("Authenticator capture cancelled.") end)
+-- Standalone camera test: no browser checks, output parsing or clipboard writes.
+function M.testCamera()
+    if active then finish("Camera capture cancelled."); return end
+    local session = {}
+    active = session
+    escape:enable()
+    session.timeout = hs.timer.doAfter(120, function()
+        if active == session then finish("Camera test finished.") end
+    end)
+    session.camera = hs.task.new(root .. "camera-otp/camera-otp.sh", function(status)
+        if active ~= session then return end
+        session.camera = nil
+        if status == 0 then finish()
+        else finish("Camera test stopped. If no preview appeared, check Camera permission.") end
+    end, {"--preview"})
+    if not session.camera:start() then finish("Could not start the camera test."); return end
+    hs.alert.show("Camera test only — Escape or Ctrl-Cmd-Shift-C to close.", 3)
+end
+
+escape = hs.hotkey.new({}, "escape", function() finish("Camera capture cancelled.") end)
 M.hotkey = hs.hotkey.bind({"ctrl", "cmd", "shift"}, "a", M.start)
+M.testHotkey = hs.hotkey.bind({"ctrl", "cmd", "shift"}, "c", M.testCamera)
 M.cancel = finish
 return M

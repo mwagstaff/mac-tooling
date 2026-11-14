@@ -66,6 +66,19 @@ camera is unavailable or you close its window, typing and the clipboard still wo
 Leading zeroes are preserved. The token and prefix must still total exactly
 12 digits; manual entry continues to support 6- or 8-digit tokens.
 
+The preview blurs the background while keeping a stable detected phone outline
+clear. Before detection, the blurred live view still gives positioning feedback;
+readable account/code text is helpful but no longer required to reveal the phone.
+Face detections are excluded; keep the phone beside your face if they overlap.
+The mask follows the acquired phone, smooths small movements, and tolerates
+brief detection misses rather than jumping between rectangles. An obscured or
+heavily tilted screen may not be found. This display effect does not crop OCR.
+Analysis runs at most four times per second, with a pause after expensive frames;
+outline/face detection uses a smaller image while OCR retains full resolution.
+Positioning arrows describe **physical movement**: “towards your left/right”
+means move your hand that way, regardless of the **Mirror preview** setting.
+The hints follow the account/code location when available, otherwise the screen.
+
 The clipboard watcher polls macOS's change counter every 200 ms, starting when
 the prompt opens. It does not read existing clipboard text, and a new copy of
 the same text still counts as a change. Nonmatching text is ignored, including
@@ -132,3 +145,17 @@ Implementation references: [Playwright browser contexts](https://playwright.dev/
 and [download completion](https://playwright.dev/python/docs/downloads),
 [Apple's pasteboard change counter](https://sosumi.ai/documentation/appkit/nspasteboard/changecount),
 and [terminal input](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/asking_for_input.html).
+
+## Test the camera without logging in
+
+Press **Ctrl–Cmd–Shift–C** to open the standalone camera test from any app.
+It shows the same masking, aiming arrows and six-digit recognition feedback,
+but never copies or outputs the code, fills a browser field, or submits a login.
+The preview stays open after detection. Press the shortcut again, press
+**Escape**, or close the window to stop; it also closes after two minutes.
+
+For the account-specific guide from a terminal, use:
+
+```sh
+~/dev/mac-tooling/camera-otp/camera-otp.sh --preview --account 'Service: account'
+```
