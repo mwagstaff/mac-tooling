@@ -13,18 +13,22 @@ preview starts unmirrored. Use **Mirror preview** if the opposite orientation
 feels easier; the choice is remembered for both Authenticator and RSA capture.
 Only the preview is flipped, not the image used for text recognition.
 
-The preview blurs the background while keeping a stable detected phone outline
-clear. Before detection, the blurred live view still gives positioning feedback;
-readable account/code text is helpful but no longer required to reveal the phone.
+The preview uses a light blur overlay (18% opacity), leaving the live image
+clearly visible even before detection. A cyan outline marks the detected phone,
+whose screen stays clear. Before detection, the live view gives positioning feedback;
+positioning uses only phone outlines and face exclusion, independently of screen
+content. Outline and arrow updates are delivered before OCR runs.
 Face detections are excluded; keep the phone beside your face if they overlap.
 The mask follows the acquired phone, smooths small movements, and tolerates
 brief detection misses rather than jumping between rectangles. An obscured or
 heavily tilted screen may not be found. This display effect does not crop OCR.
 Analysis runs at most four times per second, with a pause after expensive frames;
 outline/face detection uses a smaller image while OCR retains full resolution.
-Positioning arrows describe **physical movement**: “towards your left/right”
+Large yellow arrows appear directly on the preview, including before the outline
+locks and after code detection. If no phone can be located, the preview says so
+instead of guessing a direction. Positioning arrows describe **physical movement**: “towards your left/right”
 means move your hand that way, regardless of the **Mirror preview** setting.
-The hints follow the account/code location when available, otherwise the screen.
+The hints always follow the phone outline, regardless of account/code recognition.
 
 The shortcut maps the exact HTTPS website to the account in `config.json`,
 matches the full account label to the code beneath it, fills the browser field,

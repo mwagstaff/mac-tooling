@@ -39,37 +39,42 @@ func outline(_ box: CGRect) -> PhoneOutline {
 let screen = outline(CGRect(x: 0.1, y: 0.1, width: 0.25, height: 0.75))
 let face = CGRect(x: 0.55, y: 0.3, width: 0.2, height: 0.4)
 let faceOutline = outline(face)
-let codeBox = CGRect(x: 0.15, y: 0.45, width: 0.1, height: 0.04)
 var tracker = PhoneTracker()
 for i in 0..<5 {
-    precondition(tracker.update([faceOutline], faces: [face], text: face.insetBy(dx: 0.05, dy: 0.1), now: Double(i)) == nil,
-                 "Face must be rejected even if OCR reports text there")
-    precondition(tracker.update([screen], faces: [], text: nil, now: Double(i)) == nil,
+    precondition(tracker.update([faceOutline], faces: [face], now: Double(i)) == nil,
+                 "Face must be rejected independently of screen content")
+    precondition(tracker.update([screen], faces: [], now: Double(i)) == nil,
                  "Isolated detections separated by long gaps cannot acquire")
 }
-precondition(tracker.update([screen, faceOutline], faces: [face], text: codeBox, now: 10) == nil)
-precondition(tracker.update([faceOutline, screen], faces: [face], text: codeBox, now: 10.1) == nil)
-precondition(tracker.update([screen, faceOutline], faces: [face], text: codeBox, now: 10.2)?.box == screen.box,
+precondition(tracker.update([screen, faceOutline], faces: [face], now: 10) == nil)
+precondition(tracker.update([faceOutline, screen], faces: [face], now: 10.1) == nil)
+precondition(tracker.update([screen, faceOutline], faces: [face], now: 10.2)?.box == screen.box,
              "Three stable detections acquire the phone, ignoring a central face")
-precondition(tracker.update([], faces: [], text: nil, now: 10.4)?.box == screen.box,
+precondition(tracker.update([], faces: [], now: 10.4)?.box == screen.box,
              "Brief detector dropout does not flash grey")
-precondition(tracker.update([], faces: [], text: nil, now: 10.9) == nil,
+precondition(tracker.update([], faces: [], now: 10.9) == nil,
              "Lost phone opening expires")
-for i in 0..<3 { _ = tracker.update([screen], faces: [], text: codeBox, now: 11 + Double(i) * 0.1) }
-precondition(tracker.update([screen], faces: [screen.box], text: nil, now: 11.21) == nil,
+for i in 0..<3 { _ = tracker.update([screen], faces: [], now: 11 + Double(i) * 0.1) }
+precondition(tracker.update([screen], faces: [screen.box], now: 11.21) == nil,
              "Face entering a retained opening hides it immediately")
 var jitter = PhoneTracker()
-for i in 0..<3 { _ = jitter.update([screen], faces: [], text: codeBox, now: Double(i) * 0.1) }
+for i in 0..<3 { _ = jitter.update([screen], faces: [], now: Double(i) * 0.1) }
 let shifted = outline(screen.box.offsetBy(dx: 0.02, dy: 0))
-let smoothed = jitter.update([shifted, faceOutline], faces: [], text: nil, now: 0.3)!
+let smoothed = jitter.update([shifted, faceOutline], faces: [], now: 0.3)!
 precondition(smoothed.box.minX > screen.box.minX && smoothed.box.minX < shifted.box.minX,
              "Smooth the existing phone, do not jump to a different rectangle")
-precondition(jitter.update([faceOutline], faces: [], text: nil, now: 1.1) == nil,
+precondition(jitter.update([faceOutline], faces: [], now: 1.1) == nil,
              "Unrelated rectangle cannot take over a lost lock")
 var unreadable = PhoneTracker()
-precondition(unreadable.update([screen], faces: [], text: nil, now: 0) == nil)
-precondition(unreadable.update([screen], faces: [], text: nil, now: 0.25) == nil)
-precondition(unreadable.update([screen], faces: [], text: nil, now: 0.5)?.box == screen.box,
+precondition(unreadable.update([screen], faces: [], now: 0) == nil)
+precondition(unreadable.aimingBox == screen.box, "Guide movement from the first outline without OCR")
+precondition(Aiming.arrows(for: unreadable.aimingBox) == ["←"], "Immediate arrows for an unreadable screen")
+precondition(Aiming.arrows(for: CGRect(x: 0.1, y: 0.4, width: 0.1, height: 0.2)) == ["←"],
+             "Phone physically to user right needs left arrow in raw camera coordinates")
+precondition(Aiming.arrows(for: box(0.5, 0.5)).isEmpty)
+precondition(Aiming.arrows(for: nil).isEmpty)
+precondition(unreadable.update([screen], faces: [], now: 0.25) == nil)
+precondition(unreadable.update([screen], faces: [], now: 0.5)?.box == screen.box,
              "Stable phone becomes visible before OCR succeeds")
 var schedule = AnalysisSchedule()
 precondition(schedule.begin(at: 0))
@@ -116,6 +121,8 @@ if CommandLine.arguments.count > 1 {
         guide.detected = index == 3
         guide.mirrored = index % 2 == 1
         guide.phone = index == 2 ? nil : phone
+        // Include no lock, provisional outline, mirrored, and code-detected states.
+        guide.aimingBox = index == 2 ? nil : phone.box
         panel.addSubview(guide.backgroundBlur)
         panel.addSubview(guide)
         container.addSubview(panel)
