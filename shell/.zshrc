@@ -93,6 +93,11 @@ function cleanup() {
 }
 
 # Deploy function
+function a() {
+  ~/dev/mac-tooling/app-store/archive_ios.zsh "$@"
+}
+alias a='noglob a'
+
 function d() {
   ~/dev/server-tooling/deploy/node_project.zsh $*
 }

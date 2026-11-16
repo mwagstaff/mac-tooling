@@ -2,6 +2,13 @@
 
 Personal Mac setup: shell config, prompt, and assorted scripts for managing a Mac and its dev environment.
 
+## iOS archives and App Store Connect uploads
+
+Use `a top-scores --archive-only` to create a local Xcode archive, or
+`a top-scores` to archive and upload. App names are discovered under `~/dev`.
+See [the archive helper documentation](app-store/README.md) for name matching,
+authentication, dry runs and retrying uploads.
+
 ## Install shell & prompt config
 
 Sets up zsh (aliases, functions, Bitwarden-backed env vars), the oh-my-posh prompt (host-colour-coded, so you can tell machines apart at a glance), the `dev-git-prompt` background git-status banner, and `tabset` (sets the terminal tab title/badge — see [`.zshrc`](shell/.zshrc)'s `setTitle` function).
