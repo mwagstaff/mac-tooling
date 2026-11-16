@@ -17,6 +17,42 @@ alias pair="~/dev/scripts/xcode-scripts/pair.sh"
 alias pip="pip3"
 alias python="python3"
 alias reload="exec zsh"
+
+# Shut down running iOS simulators, including any apps playing audio.
+function killsim() {
+    python3 - <<'PY'
+import json
+import subprocess
+import sys
+
+try:
+    result = subprocess.run(
+        ["xcrun", "simctl", "list", "devices", "--json"],
+        check=True, capture_output=True, text=True,
+    )
+    devices = json.loads(result.stdout)["devices"]
+    running = [
+        device
+        for runtime, entries in devices.items()
+        if runtime.startswith("com.apple.CoreSimulator.SimRuntime.iOS-")
+        for device in entries
+        if device.get("state") in ("Booted", "Booting")
+    ]
+    if not running:
+        print("No running iOS simulators found.")
+    failed = False
+    for device in running:
+        print(f"Shutting down {device['name']} ({device['udid']})...", flush=True)
+        shutdown = subprocess.run(["xcrun", "simctl", "shutdown", device["udid"]])
+        failed |= shutdown.returncode != 0
+    sys.exit(1 if failed else 0)
+except (OSError, subprocess.CalledProcessError, ValueError, KeyError) as error:
+    print(f"killsim: {error}", file=sys.stderr)
+    if isinstance(error, subprocess.CalledProcessError) and error.stderr:
+        print(error.stderr.strip(), file=sys.stderr)
+    sys.exit(1)
+PY
+}
 alias todo="grep -rIi todo . --exclude-dir={node_modules,.git,dist,cypress,.vscode,ios}"
 alias mongo="ssh -L 27017:localhost:27017 sky"
 alias mongo-mini="ssh -L 27018:localhost:27017 mini"
