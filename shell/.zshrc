@@ -496,3 +496,4 @@ bindkey $'\e[1;3D' backward-word
 bindkey $'\e[1;3C' forward-word
 
 source "$HOME/.config/zsh/dev-git-prompt/dev-git-prompt.zsh"
+alias simoff='xcrun simctl shutdown all'
