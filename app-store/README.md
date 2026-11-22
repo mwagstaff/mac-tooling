@@ -56,6 +56,20 @@ success means Apple accepted the transfer, not that processing or review finishe
 TestFlight groups, export compliance and App Review remain in App Store Connect.
 The helper does not submit a review or release an app publicly.
 
+## Build and run on a device
+
+`r` (backed by `run_ios.zsh`) builds an app with the same project matching as `a`,
+installs it on a paired physical device and launches it. The scheme's Run
+configuration (normally Debug) and Xcode's default DerivedData are used, so builds
+are incremental. The device defaults to "Mike's iPhone" and must be unlocked to launch.
+
+```zsh
+r train-uk
+r top*                             # Prompts if several projects match
+r --device 'Ippy (Nova’s iPad)' tube
+r --list
+```
+
 Run automated checks with:
 
 ```zsh

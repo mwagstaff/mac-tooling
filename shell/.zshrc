@@ -98,6 +98,13 @@ function a() {
 }
 alias a='noglob a'
 
+# Build and run an iOS app on Mike's iPhone: "r train-uk", "r top*", "r --device 'Name' tube"
+# (Overrides zsh's built-in "r" history command.)
+function r() {
+  ~/dev/mac-tooling/app-store/run_ios.zsh "$@"
+}
+alias r='noglob r'
+
 function d() {
   ~/dev/server-tooling/deploy/node_project.zsh $*
 }
