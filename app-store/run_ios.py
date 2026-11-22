@@ -57,7 +57,11 @@ def main():
         for project in projects:
             print(f'{names(project, root)[0]}: {project}')
         return
-    project = resolve(projects, root, args.app)
+    if args.app:
+        project = resolve(projects, root, args.app)
+    else:
+        labels = {f'{names(p, root)[0]} ({p.stem})': p for p in projects}
+        project = labels[choose(list(labels), 'app')]
     container = workspace_for(project)
     scheme = choose(sorted(scheme_candidates(project, container)), 'shared iOS application scheme')
     configuration = launch_configuration(project, container, scheme)
@@ -88,6 +92,6 @@ if __name__ == '__main__':
     except (ValueError, subprocess.CalledProcessError, OSError, ET.ParseError) as error:
         print(f'Error: {error}', file=sys.stderr)
         sys.exit(1)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         print('Cancelled.', file=sys.stderr)
         sys.exit(130)

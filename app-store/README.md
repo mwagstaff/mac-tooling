@@ -58,16 +58,17 @@ The helper does not submit a review or release an app publicly.
 
 ## Build and run on a device
 
-`r` (backed by `run_ios.zsh`) builds an app with the same project matching as `a`,
+`i` (backed by `run_ios.zsh`) builds an app with the same project matching as `a`,
 installs it on a paired physical device and launches it. The scheme's Run
 configuration (normally Debug) and Xcode's default DerivedData are used, so builds
 are incremental. The device defaults to "Mike's iPhone" and must be unlocked to launch.
 
 ```zsh
-r train-uk
-r top*                             # Prompts if several projects match
-r --device 'Ippy (Nova’s iPad)' tube
-r --list
+i                                  # Pick from a list of all apps
+i train-uk
+i top*                             # Prompts if several projects match
+i --device 'Ippy (Nova’s iPad)' tube
+i --list
 ```
 
 Run automated checks with:

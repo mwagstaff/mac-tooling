@@ -2,10 +2,10 @@
 alias activate="python3 -m venv venv && source venv/bin/activate"
 alias aliases="grep 'alias ' ~/.zshrc"
 alias b="npm install @capacitor/ios && npx cap add ios >/dev/null ; npm run build && npx cap sync ios && npx cap open ios"
-alias bp="code ~/.zshrc"
-alias cj="code ~/.claude/settings.json"
+alias bp="zed ~/.zshrc"
 alias ccusage="bunx ccusage"
 alias cl="checkpoint list"
+alias code="zed"
 alias cu="bunx ccusage"
 colours() {
   for i in {0..255}; do
@@ -98,12 +98,11 @@ function a() {
 }
 alias a='noglob a'
 
-# Build and run an iOS app on Mike's iPhone: "r train-uk", "r top*", "r --device 'Name' tube"
-# (Overrides zsh's built-in "r" history command.)
-function r() {
+# Build and run an iOS app on Mike's iPhone: "i" (pick from list), "i train-uk", "i top*", "i --device 'Name' tube"
+function i() {
   ~/dev/mac-tooling/app-store/run_ios.zsh "$@"
 }
-alias r='noglob r'
+alias i='noglob i'
 
 function d() {
   ~/dev/server-tooling/deploy/node_project.zsh $*
