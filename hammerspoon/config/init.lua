@@ -746,3 +746,7 @@ hs.alert.show("Text expander loaded")
 if hs.settings.get("weeklyDockUsageEnabled") then
     weeklyDockUsage = dofile(os.getenv("HOME") .. "/dev/mac-tooling/hammerspoon/config/dock-usage.lua")
 end
+
+if hs.settings.get("finderGooglyEyesEnabled") then
+    finderGooglyEyes = dofile(os.getenv("HOME") .. "/dev/mac-tooling/hammerspoon/config/finder-eyes.lua")
+end

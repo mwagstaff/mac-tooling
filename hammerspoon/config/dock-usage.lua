@@ -93,12 +93,34 @@ local function fetch(name, p)
     end
 end
 
-local function refresh()
-    for name, p in pairs(providers) do fetch(name, p) end
+local function refreshSpend()
+    local p = providers.codex
+    local now = os.time()
+    if p.spendTask or (p.spendMonth == os.date("!%Y-%m", now) and now-p.spendAt < 3600) then return end
+    local helper = os.getenv("HOME") .. "/dev/mac-tooling/hammerspoon/config/openai-monthly-spend.py"
+    local task = hs.task.new("/opt/homebrew/bin/python3", function(code, output)
+        p.spendTask = nil
+        local data = code == 0 and hs.json.decode(output)
+        if type(data) ~= "table" or data.month ~= os.date("!%Y-%m") then return end
+        local usd = tonumber(data.usd)
+        if not usd then return end
+        local rounded = math.floor(math.abs(usd) + 0.5)
+        local amount = tostring(rounded)
+        if rounded >= 1000000 then amount = string.format("%.1fm", rounded/1000000)
+        elseif rounded >= 1000 then amount = string.format("%.1fk", rounded/1000) end
+        p.spendLabel = (usd < 0 and "-$" or "$") .. amount
+        p.spendMonth, p.spendAt = data.month, os.time()
+    end, {helper})
+    if task then p.spendTask = task:start() end
 end
 
-local function draw(p, f, week, session, nativeBadge)
-    local key = table.concat({f.x,f.y,f.w,f.h,tostring(week),tostring(session),tostring(nativeBadge)}, "/")
+local function refresh()
+    for name, p in pairs(providers) do fetch(name, p) end
+    refreshSpend()
+end
+
+local function draw(p, f, week, session, nativeBadge, spend)
+    local key = table.concat({f.x,f.y,f.w,f.h,tostring(week),tostring(session),tostring(nativeBadge),spend or ""}, "/")
     if p.key == key then return end
     -- The AX frame includes padding and the running indicator below the icon.
     local size = f.w * 0.765
@@ -152,6 +174,15 @@ local function draw(p, f, week, session, nativeBadge)
                 startAngle=0,endAngle=session*3.6,arcRadii=true,fillColor={white=1}})
         end
     end
+    if spend and not nativeBadge then
+        local width = math.min(0.59, 0.095 + #spend*0.105)
+        local left = 0.95-width
+        table.insert(elements,{type="rectangle",action="fill",frame=box(left,0.084,width,0.229),
+            roundedRectRadii=corners(0.115),fillColor=ink})
+        table.insert(elements,{type="text",text=spend,textAlignment="center",textFont="HelveticaNeue-Medium",
+            textSize=size*math.min(0.185,(width-0.05)/(0.61*#spend)),textColor={white=1},
+            frame=box(left,0.084,width,0.26)})
+    end
     if not p.canvas then
         p.canvas = hs.canvas.new(f):level(hs.canvas.windowLevels.dock+1)
             :behavior({"canJoinAllSpaces","stationary","ignoresCycle"})
@@ -178,7 +209,8 @@ local function layout()
             (p.session.reset and p.session.reset > utc(now))
             or (not p.session.reset and p.updated >= utc(now-360))
         ) and p.session.percent
-        if list and (week or session)
+        local spend = p.spendMonth == os.date("!%Y-%m", now) and now-p.spendAt < 7200 and p.spendLabel
+        if list and (week or session or spend)
             and full.y + full.h - bottom > 12 then
             if not p.tile or not p.tile:isValid() then
                 local path = hs.application.pathForBundleID(p.bundle)
@@ -193,7 +225,7 @@ local function layout()
                 local hit = hs.axuielement.systemElementAtPosition(f.x+f.w/2,f.y+f.h/2)
                 if hit == p.tile then
                     local status = p.tile.AXStatusLabel
-                    draw(p,f,week,session,status ~= nil and status ~= "")
+                    draw(p,f,week,session,status ~= nil and status ~= "",spend)
                     shown = true
                 end
             end
