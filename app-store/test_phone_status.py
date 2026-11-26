@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -28,6 +29,21 @@ class PhoneStatusTests(unittest.TestCase):
             with self.assertRaisesRegex(phone_status.DeviceUnavailable, 'Reconnect the cable'):
                 run_ios.main()
             self.assertEqual([call.args[0][:2] for call in run.call_args_list], [['xcrun', 'xcdevice']])
+
+    def test_ipad_rows_use_each_devices_own_connection_and_lock_state(self):
+        skyla, nova = phone_status.TARGET_DEVICES.values()
+        devices = [dict(self.phone, name=skyla, identifier='skyla'),
+                   dict(self.phone, name=nova, identifier='nova')]
+        with patch('phone_status.list_devices', return_value=devices), \
+                patch('phone_status.lock_status', side_effect={'skyla': True, 'nova': False}.get) as lock:
+            self.assertEqual(phone_status.ipad_statuses(), [
+                f'{skyla} — Connected · Locked', f'{nova} — Connected · Unlocked'])
+            devices[0]['available'] = False
+            lock.reset_mock()
+            lock.side_effect = [None]
+            self.assertEqual(phone_status.ipad_statuses(), [
+                f'{skyla} — Unavailable', f'{nova} — Connected · Lock state unknown'])
+            lock.assert_called_once_with('nova')
 
     def test_simulator_and_other_phone_do_not_match(self):
         with self.assertRaises(phone_status.DeviceUnavailable):
@@ -69,6 +85,95 @@ class PhoneStatusTests(unittest.TestCase):
             with patch('run_ios.lock_status', return_value=state), patch('sys.stdin.isatty', return_value=False):
                 with self.assertRaisesRegex(ValueError, message):
                     run_ios.wait_for_unlock(self.phone)
+
+    def test_target_selection_and_unlock_between_install_and_launch(self):
+        root = Path.home() / 'dev'
+        stone = root / 'games/StoneAgeSettlers.xcodeproj'
+        princess = root / 'games/otter-and-mosey-princess-ball/PrincessBall.xcodeproj'
+        alternate = root / 'games/otter-and-mosey-princess-ball-codex-attempt/PrincessBall.xcodeproj'
+        settings = dict(PRODUCT_TYPE='com.apple.product-type.application', PLATFORM_NAME='iphoneos',
+                        TARGET_BUILD_DIR='/tmp', WRAPPER_NAME='Game.app', PRODUCT_BUNDLE_IDENTIFIER='test.game')
+        for args, name, project in [
+            (['stone', 'skyla'], 'Ippygelda (Skyla’s iPad)', stone),
+            (['princess', 'nova'], 'Ippy (Nova’s iPad)', princess),
+            (['stone'], phone_status.DEFAULT_DEVICE, stone),
+            (['--device', 'Other iPad', 'stone'], 'Other iPad', stone),
+        ]:
+            with self.subTest(args=args):
+                events = []
+                device = dict(name=name, identifier='selected-udid')
+                states = iter([False, True, False])
+
+                def lock(identifier):
+                    self.assertEqual(identifier, device['identifier'])
+                    events.append('lock check')
+                    return next(states)
+
+                def execute(command):
+                    if command[0] == 'xcodebuild':
+                        self.assertIn('DEVELOPMENT_TEAM=$(inherited:default=SJ8X4DLAN9)', command)
+                        self.assertIn(str(project), command)
+                        self.assertIn('id=selected-udid', command)
+                        events.append('build')
+                    else:
+                        self.assertEqual(command[command.index('--device') + 1], device['identifier'])
+                        events.append(command[3])
+
+                with patch('sys.argv', ['i', *args]), patch('run_ios.discover', return_value=[alternate, stone, princess]), \
+                        patch('run_ios.find_available_device', return_value=device) as lookup, \
+                        patch('run_ios.workspace_for', return_value=project) as workspace, \
+                        patch('run_ios.scheme_candidates', return_value=['Game']), \
+                        patch('run_ios.capture', return_value=json.dumps([dict(buildSettings=settings)])), \
+                        patch('run_ios.lock_status', side_effect=lock), patch('sys.stdin.isatty', return_value=True), \
+                        patch('run_ios.time.sleep'), patch('run_ios.run', side_effect=execute), patch('builtins.print'):
+                    run_ios.main()
+                lookup.assert_called_once_with(name)
+                workspace.assert_called_once_with(project)
+                self.assertEqual(events, ['lock check', 'build', 'install', 'lock check', 'lock check', 'process'])
+
+    def test_both_builds_once_and_uses_same_app_on_each_ipad(self):
+        project = Path.home() / 'dev/games/StoneAgeSettlers.xcodeproj'
+        devices = [dict(name=name, identifier=alias) for alias, name in phone_status.TARGET_DEVICES.items()]
+        settings = dict(PRODUCT_TYPE='com.apple.product-type.application', PLATFORM_NAME='iphoneos',
+                        TARGET_BUILD_DIR='/tmp', WRAPPER_NAME='Game.app', PRODUCT_BUNDLE_IDENTIFIER='test.game')
+        for first_install_fails in [False, True]:
+            commands = []
+
+            def execute(command):
+                commands.append(command)
+                if first_install_fails and 'install' in command and 'skyla' in command:
+                    raise subprocess.CalledProcessError(1, command)
+
+            with self.subTest(first_install_fails=first_install_fails), patch('sys.argv', ['i', 'stone', 'both']), \
+                    patch('run_ios.find_available_device', side_effect=devices) as lookup, \
+                    patch('run_ios.discover', return_value=[project]), patch('run_ios.workspace_for', return_value=project), \
+                    patch('run_ios.scheme_candidates', return_value=['Game']), patch('run_ios.wait_for_unlock') as unlock, \
+                    patch('run_ios.capture', return_value=json.dumps([dict(buildSettings=settings)])), \
+                    patch('run_ios.run', side_effect=execute), patch('builtins.print'):
+                if first_install_fails:
+                    with self.assertRaisesRegex(ValueError, 'Ippygelda'):
+                        run_ios.main()
+                else:
+                    run_ios.main()
+            self.assertEqual([c.args[0] for c in lookup.call_args_list], [d['name'] for d in devices])
+            self.assertEqual([c.args for c in unlock.call_args_list], [(d,) for d in devices] +
+                             [(d, 'launch the app') for d in (devices[1:] if first_install_fails else devices)])
+            builds = [c for c in commands if c[0] == 'xcodebuild']
+            self.assertEqual(len(builds), 1)
+            self.assertIn('generic/platform=iOS', builds[0])
+            self.assertEqual([c[-2:] for c in commands if 'install' in c],
+                             [['skyla', '/tmp/Game.app'], ['nova', '/tmp/Game.app']])
+            self.assertEqual([c[c.index('--device') + 1] for c in commands if 'launch' in c],
+                             ['nova'] if first_install_fails else ['skyla', 'nova'])
+
+    def test_both_stops_before_build_when_second_ipad_is_offline(self):
+        with patch('sys.argv', ['i', 'stone', 'both']), patch('run_ios.find_available_device',
+                side_effect=[self.phone, phone_status.DeviceUnavailable('Nova is unavailable')]), \
+                patch('run_ios.run') as run, self.assertRaisesRegex(ValueError, 'Nova is unavailable'):
+            try:
+                run_ios.main()
+            finally:
+                run.assert_not_called()
 
     def test_list_skips_connection_check(self):
         with patch('sys.argv', ['i', '--list']), patch('run_ios.discover', return_value=[]), \

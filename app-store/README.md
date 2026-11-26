@@ -62,10 +62,15 @@ The helper does not submit a review or release an app publicly.
 installs it on a paired physical device and launches it. The scheme's Run
 configuration (normally Debug) and Xcode's default DerivedData are used, so builds
 are incremental. The device defaults to "Mike's iPhone" and must be unlocked to launch.
+For device builds, each target uses its configured development team, falling back
+to the Top Scores team (`SJ8X4DLAN9`) if empty. This only affects the current build.
 
 ```zsh
 i                                  # Pick from a list of all apps
-i train-uk
+i train-uk                         # Mike’s iPhone
+i stone both                       # Build once, install and launch on both iPads
+i stone skyla                      # Stone Age Settlers on Ippygelda (Skyla’s iPad)
+i princess nova                    # Princess Ball on Ippy (Nova’s iPad)
 i top*                             # Prompts if several projects match
 i --device 'Ippy (Nova’s iPad)' tube
 i --list
@@ -73,14 +78,15 @@ i --list
 
 Before selecting a project or invoking Xcode build tools, `i` checks whether Xcode
 can reach the requested physical device over USB or Wi-Fi. If Xcode reports a
-recovery suggestion, the command prints it. Before fetching build settings, `i`
-checks the selected device’s lock state. In a terminal it asks you to unlock a
+recovery suggestion, the command prints it. `i` checks the selected device’s lock state before fetching build settings
+and again after installation, immediately before launch. In a terminal it asks you to unlock a
 locked device and checks every three seconds until you do. Press Ctrl-C to
 cancel. Noninteractive runs exit if the device is locked. If Xcode cannot read
 the lock state, the command exits with retry instructions. `i --list` works offline.
 
 Install and open the companion menu bar app with `app-store/phone-status/install.sh`
-from the repository root. Phone Status checks Mike’s iPhone every three seconds.
+from the repository root. Phone Status checks Mike’s iPhone every three seconds. Open its menu for the connection and lock status of Skyla’s
+and Nova’s iPads. The menu bar icon follows Mike’s iPhone.
 A phone with a lock means locked, a checkmark means unlocked, a plain phone
 means connected with unknown lock state, a slashed phone means unavailable,
 and a question mark means the check failed. Hover for details or choose **Check

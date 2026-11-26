@@ -19,18 +19,29 @@ private enum Connection {
 private final class Monitor: ObservableObject {
     @Published var connection = Connection.checking
     @Published var message = "Checking Mike’s iPhone…"
+    @Published var ipadRows = ["Checking Skyla’s iPad…", "Checking Nova’s iPad…"]
+    private var checkingIPads = false
     private var checking = false
     private var timer: Timer?
 
     init() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
-        timer?.tolerance = 0.2
+        timer.tolerance = 0.2
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     func refresh() {
+        if !checkingIPads {
+            checkingIPads = true
+            Task {
+                ipadRows = await Task.detached { Self.checkIPads() }.value
+                checkingIPads = false
+            }
+        }
         guard !checking else { return }
         checking = true
         Task {
@@ -41,20 +52,33 @@ private final class Monitor: ObservableObject {
         }
     }
 
-    nonisolated private static func check() -> (Connection, String) {
-        let failure = (Connection.unknown, "Could not check Mike’s iPhone. Check your Xcode installation.")
-        guard let helper = Bundle.main.url(forResource: "phone_status", withExtension: "py") else { return failure }
+    nonisolated private static func runHelper(_ arguments: [String]) -> (Int32, Data)? {
+        guard let helper = Bundle.main.url(forResource: "phone_status", withExtension: "py") else { return nil }
         let process = Process()
         let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        process.arguments = [helper.path]
+        process.arguments = [helper.path] + arguments
         process.standardOutput = pipe
-        do { try process.run() } catch { return failure }
+        do { try process.run() } catch { return nil }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        guard let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        return (process.terminationStatus, data)
+    }
+
+    nonisolated private static func checkIPads() -> [String] {
+        guard let (code, data) = runHelper(["--ipads"]), code == 0,
+              let rows = try? JSONDecoder().decode([String].self, from: data) else {
+            return ["Couldn’t check Skyla’s iPad", "Couldn’t check Nova’s iPad"]
+        }
+        return rows
+    }
+
+    nonisolated private static func check() -> (Connection, String) {
+        let failure = (Connection.unknown, "Could not check Mike’s iPhone. Check your Xcode installation.")
+        guard let (code, data) = runHelper([]),
+              let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return failure }
-        switch process.terminationStatus {
+        switch code {
         case 0: return (.connected, text)
         case 1: return (.unavailable, text)
         case 3: return (.locked, text)
@@ -78,6 +102,8 @@ struct PhoneStatusApp: App {
             case .unavailable: Text("Mike’s iPhone is unavailable")
             case .unknown: Text("Couldn’t check Mike’s iPhone")
             }
+            Divider()
+            ForEach(monitor.ipadRows, id: \.self) { row in Text(row) }
             Divider()
             Button("Check Again") { monitor.refresh() }
             Button("Quit Phone Status") { NSApplication.shared.terminate(nil) }

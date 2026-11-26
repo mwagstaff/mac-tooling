@@ -1,15 +1,22 @@
 """Check whether Xcode can use a named physical device."""
 import json
 import subprocess
+import sys
 
 DEFAULT_DEVICE = "Mike's iPhone"
+
+
+TARGET_DEVICES = {
+    'skyla': 'Ippygelda (Skyla’s iPad)',
+    'nova': 'Ippy (Nova’s iPad)',
+}
 
 
 class DeviceUnavailable(ValueError):
     pass
 
 
-def find_available_device(name, discovery_seconds=3):
+def list_devices(discovery_seconds):
     try:
         result = subprocess.run(
             ['xcrun', 'xcdevice', 'list', '--timeout', str(discovery_seconds)],
@@ -20,6 +27,10 @@ def find_available_device(name, discovery_seconds=3):
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         raise ValueError('Could not check the connection. Check that Xcode and its command-line tools are available, then retry.') from error
 
+    return devices
+
+
+def select_device(devices, name):
     def normalized(value):
         return value.replace('’', "'").casefold()
 
@@ -38,6 +49,10 @@ def find_available_device(name, discovery_seconds=3):
     raise DeviceUnavailable(f'Xcode cannot reach {name}. {advice}')
 
 
+def find_available_device(name, discovery_seconds=3):
+    return select_device(list_devices(discovery_seconds), name)
+
+
 def lock_status(identifier):
     """Return whether unlocking is required, or None when Xcode cannot tell."""
     try:
@@ -51,8 +66,27 @@ def lock_status(identifier):
     return locked if isinstance(locked, bool) else None
 
 
+def ipad_statuses():
+    devices = list_devices(discovery_seconds=1)
+    rows = []
+    for name in TARGET_DEVICES.values():
+        try:
+            device = select_device(devices, name)
+        except DeviceUnavailable:
+            status = 'Unavailable'
+        else:
+            locked = lock_status(device['identifier'])
+            status = {True: 'Connected · Locked', False: 'Connected · Unlocked',
+                      None: 'Connected · Lock state unknown'}[locked]
+        rows.append(f'{name} — {status}')
+    return rows
+
+
 if __name__ == '__main__':
     try:
+        if sys.argv[1:] == ['--ipads']:
+            print(json.dumps(ipad_statuses()))
+            raise SystemExit(0)
         device = find_available_device(DEFAULT_DEVICE, discovery_seconds=1)
         locked = lock_status(device['identifier'])
         if locked is None:
