@@ -1,12 +1,14 @@
 import SwiftUI
 
 private enum Connection {
-    case checking, connected, unavailable, unknown
+    case checking, connected, locked, unlocked, unavailable, unknown
 
     var symbol: String {
         switch self {
         case .checking: "ellipsis.circle"
-        case .connected: "iphone.badge.checkmark"
+        case .connected: "iphone"
+        case .locked: "lock.iphone"
+        case .unlocked: "iphone.badge.checkmark"
         case .unavailable: "iphone.slash"
         case .unknown: "questionmark.diamond"
         }
@@ -55,6 +57,8 @@ private final class Monitor: ObservableObject {
         switch process.terminationStatus {
         case 0: return (.connected, text)
         case 1: return (.unavailable, text)
+        case 3: return (.locked, text)
+        case 4: return (.unlocked, text)
         default: return (.unknown, text)
         }
     }
@@ -68,7 +72,9 @@ struct PhoneStatusApp: App {
         MenuBarExtra {
             switch monitor.connection {
             case .checking: Text("Checking Mike’s iPhone…")
-            case .connected: Text("Mike’s iPhone is connected")
+            case .connected: Text("Mike’s iPhone is connected · Lock state unknown")
+            case .locked: Text("Mike’s iPhone is locked")
+            case .unlocked: Text("Mike’s iPhone is unlocked")
             case .unavailable: Text("Mike’s iPhone is unavailable")
             case .unknown: Text("Couldn’t check Mike’s iPhone")
             }

@@ -38,10 +38,31 @@ def find_available_device(name, discovery_seconds=3):
     raise DeviceUnavailable(f'Xcode cannot reach {name}. {advice}')
 
 
+def lock_status(identifier):
+    """Return whether unlocking is required, or None when Xcode cannot tell."""
+    try:
+        response = subprocess.run(
+            ['xcrun', 'devicectl', 'device', 'info', 'lockState', '--device', identifier,
+             '--quiet', '--timeout', '5', '--json-output', '-'],
+            capture_output=True, text=True, timeout=6, check=True)
+        locked = json.loads(response.stdout)['result']['passcodeRequired']
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        return None
+    return locked if isinstance(locked, bool) else None
+
+
 if __name__ == '__main__':
     try:
         device = find_available_device(DEFAULT_DEVICE, discovery_seconds=1)
-        print(f"Xcode can reach {device['name']}.")
+        locked = lock_status(device['identifier'])
+        if locked is None:
+            print(f"{device['name']} is connected. Lock state unknown.")
+        elif locked:
+            print(f"{device['name']} is connected and locked.")
+            raise SystemExit(3)
+        else:
+            print(f"{device['name']} is connected and unlocked.")
+            raise SystemExit(4)
     except DeviceUnavailable as error:
         print(error)
         raise SystemExit(1)

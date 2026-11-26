@@ -5,10 +5,28 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 
 from archive_ios import capture, choose, discover, names, resolve, scheme_candidates, workspace_for
-from phone_status import DEFAULT_DEVICE, find_available_device
+from phone_status import DEFAULT_DEVICE, find_available_device, lock_status
+
+
+def wait_for_unlock(device):
+    name = device['name']
+    identifier = device['identifier']
+    locked = lock_status(identifier)
+    if locked:
+        if not sys.stdin.isatty():
+            raise ValueError(f'{name} is locked. Unlock it and run i again.')
+        print(f'Please unlock {name} to start the build. Waiting… (Ctrl-C to cancel)',
+              file=sys.stderr, flush=True)
+        while locked:
+            time.sleep(3)
+            locked = lock_status(identifier)
+    if locked is None:
+        raise ValueError(f'Xcode could not confirm whether {name} is unlocked. '
+                         'Check the connection, unlock the device and run i again.')
 
 
 def launch_configuration(project, container, scheme):
@@ -52,6 +70,7 @@ def main():
                 '-scheme', scheme, '-configuration', configuration, '-destination', f'id={udid}']
     print(f'Project: {container}\nScheme: {scheme}\nConfiguration: {configuration}\n'
           f"Device: {device['name']} ({udid})", flush=True)
+    wait_for_unlock(device)
     settings = json.loads(capture(['xcodebuild', *selector, '-showBuildSettings', '-json']))
     apps = [x['buildSettings'] for x in settings
             if x['buildSettings'].get('PRODUCT_TYPE') == 'com.apple.product-type.application'
