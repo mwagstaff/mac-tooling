@@ -120,7 +120,7 @@ local function refresh()
 end
 
 local function draw(p, f, week, session, nativeBadge, spend)
-    local key = table.concat({f.x,f.y,f.w,f.h,tostring(week),tostring(session),tostring(nativeBadge),spend or ""}, "/")
+    local key = table.concat({f.x,f.y,f.w,f.h,tostring(week),tostring(session),tostring(nativeBadge),spend or "",tostring(p.attention),tostring(p.unread)}, "/")
     if p.key == key then return end
     -- The AX frame includes padding and the running indicator below the icon.
     local size = f.w * 0.765
@@ -183,6 +183,17 @@ local function draw(p, f, week, session, nativeBadge, spend)
             textSize=size*math.min(0.185,(width-0.05)/(0.61*#spend)),textColor={white=1},
             frame=box(left,0.084,width,0.26)})
     end
+    if p.attention then
+        local center = {x=x+size*0.805,y=y+size*0.80}
+        table.insert(elements,{type="circle",action="strokeAndFill",center=center,radius=size*0.128,
+            fillColor={red=1,green=0.73,blue=0.18},strokeColor={white=0.17,alpha=0.8},strokeWidth=0.65})
+        table.insert(elements,{type="text",text="!",textFont="HelveticaNeue-Bold",textAlignment="center",
+            textSize=size*0.205,textColor={white=0.12},frame=box(0.675,0.676,0.26,0.28)})
+    elseif p.unread then
+        table.insert(elements,{type="circle",action="strokeAndFill",
+            center={x=x+size*0.805,y=y+size*0.80},radius=size*0.09,
+            fillColor={red=0.12,green=0.49,blue=1},strokeColor={white=1,alpha=0.95},strokeWidth=1})
+    end
     if not p.canvas then
         p.canvas = hs.canvas.new(f):level(hs.canvas.windowLevels.dock+1)
             :behavior({"canJoinAllSpaces","stationary","ignoresCycle"})
@@ -196,9 +207,6 @@ local function layout()
     local ax = dock and hs.axuielement.applicationElement(dock)
     local lists = ax and ax:childrenWithRole("AXList")
     local list = lists and lists[1]
-    local screen = hs.screen.primaryScreen()
-    local full, work = screen:fullFrame(), screen:frame()
-    local bottom = work.y + work.h
     local now = os.time()
     for _, p in pairs(providers) do
         local shown = false
@@ -210,8 +218,7 @@ local function layout()
             or (not p.session.reset and p.updated >= utc(now-360))
         ) and p.session.percent
         local spend = p.spendMonth == os.date("!%Y-%m", now) and now-p.spendAt < 7200 and p.spendLabel
-        if list and (week or session or spend)
-            and full.y + full.h - bottom > 12 then
+        if list and (week or session or spend or p.attention or p.unread) then
             if not p.tile or not p.tile:isValid() then
                 local path = hs.application.pathForBundleID(p.bundle)
                 for _, item in ipairs(list.AXChildren or {}) do
@@ -220,7 +227,7 @@ local function layout()
                 end
             end
             local f = p.tile and p.tile.AXFrame
-            if f and f.w > 0 and math.abs(f.y-bottom) < 6 and f.h >= f.w then
+            if f and f.w > 0 and f.h >= f.w then
                 -- Hit-test the native tile, so hidden or covered Docks receive no overlay.
                 local hit = hs.axuielement.systemElementAtPosition(f.x+f.w/2,f.y+f.h/2)
                 if hit == p.tile then
@@ -234,12 +241,39 @@ local function layout()
     end
 end
 
+local attentionTask
+local function watchAttention()
+    if attentionTask then return end
+    local buffer = ""
+    local helper = os.getenv("HOME") .. "/dev/mac-tooling/hammerspoon/config/dock-attention.py"
+    local task = hs.task.new("/opt/homebrew/bin/python3",function()
+        attentionTask = nil
+        providers.codex.unread = false
+        for _, p in pairs(providers) do p.attention = false end
+    end,function(_, output)
+        buffer = buffer .. output
+        while buffer:find("\n",1,true) do
+            local line, rest = buffer:match("^([^\n]*)\n(.*)$")
+            buffer = rest
+            local state = hs.json.decode(line)
+            if type(state) == "table" then
+                providers.codex.unread = state.codexUnread == true
+                for name, p in pairs(providers) do p.attention = state[name] == true end
+            end
+        end
+        return true
+    end,{helper})
+    if task then attentionTask = task:start() end
+end
+
 local timers = {
     hs.timer.doEvery(1,layout),
     hs.timer.doEvery(300,refresh),
+    hs.timer.doEvery(10,watchAttention),
     hs.caffeinate.watcher.new(function(event)
         if event == hs.caffeinate.watcher.systemDidWake then refresh() end
     end):start(),
 }
 refresh()
+watchAttention()
 return {providers=providers, timers=timers}

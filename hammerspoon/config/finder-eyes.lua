@@ -16,9 +16,9 @@ local function look()
         local cx = (frame.w-size)/2 + size*eye.x
         local cy = frame.h-frame.w + size*0.365
         local dx, dy = mouse.x-frame.x-cx, mouse.y-frame.y-cy
-        -- Track nearby points smoothly and keep the whole pupil inside the rim.
+        -- Reach full travel at the white’s edge so both pupils turn inward at the midpoint.
         local travel = size*(eye.r-0.071)
-        local scale = travel / math.max(size*0.55, math.sqrt(dx*dx+dy*dy))
+        local scale = travel / math.max(size*eye.r, math.sqrt(dx*dx+dy*dy))
         local px, py = cx + dx*scale, cy + dy*scale
         local pupil = (i-1)*4+3
         canvas[pupil].center = {x=px,y=py}

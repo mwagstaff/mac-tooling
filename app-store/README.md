@@ -71,6 +71,17 @@ i --device 'Ippy (Nova’s iPad)' tube
 i --list
 ```
 
+Before selecting a project or invoking Xcode build tools, `i` checks whether Xcode
+can reach the requested physical device over USB or Wi-Fi. If Xcode reports a
+recovery suggestion, the command prints it. `i --list` works offline.
+
+Install and open the companion menu bar app with `app-store/phone-status/install.sh`
+from the repository root. Phone Status checks Mike’s iPhone every three seconds.
+A phone with a checkmark means reachable, a slashed phone means unavailable,
+and a question mark means the check failed. Hover for details or choose **Check
+Again** from the menu. To keep it running after login, add **Phone Status** from
+`~/Applications` to **System Settings → General → Login Items & Extensions**.
+
 Run automated checks with:
 
 ```zsh
